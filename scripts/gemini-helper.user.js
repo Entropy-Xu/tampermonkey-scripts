@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.4.2
+// @version      1.4.3
 // @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @match        https://gemini.google.com/*
@@ -172,6 +172,7 @@
                     justify-content: space-between;
                     align-items: center;
                     cursor: move;
+                    user-select: none;
                 }
                 .prompt-panel-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
                 .site-indicator { font-size: 10px; padding: 2px 5px; background: rgba(255,255,255,0.2); border-radius: 4px; margin-left: 4px; white-space: nowrap; }
@@ -1130,9 +1131,12 @@
 
 			header.addEventListener('mousedown', (e) => {
 				if (e.target.closest('.prompt-panel-controls')) return;
+				e.preventDefault(); // 阻止文本选中
 				initialX = e.clientX - xOffset;
 				initialY = e.clientY - yOffset;
 				isDragging = true;
+				// 拖动时禁止全局文本选中
+				document.body.style.userSelect = 'none';
 			});
 
 			document.addEventListener('mousemove', (e) => {
@@ -1146,7 +1150,13 @@
 				}
 			});
 
-			document.addEventListener('mouseup', () => { isDragging = false; });
+			document.addEventListener('mouseup', () => {
+				if (isDragging) {
+					isDragging = false;
+					// 恢复文本选中
+					document.body.style.userSelect = '';
+				}
+			});
 		}
 	}
 
