@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Gemini 提示词管理器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
-// @description  为 Gemini 和 Genspark 添加提示词管理功能，支持增删改查和快速插入，参考了其他朋友的实现
+// @version      1.1.0
+// @description  为 Gemini、Gemini Enterprise 和 Genspark 添加提示词管理功能，支持增删改查和快速插入
 // @author       urzeye
 // @match        https://gemini.google.com/*
+// @match        https://business.gemini.google/*
 // @match        https://www.genspark.ai/agents*
 // @match        https://genspark.ai/agents*
 // @grant        GM_setValue
@@ -23,7 +24,9 @@
 	window.promptManagerInitialized = true;
 
 	// 检测当前网站
-	const isGemini = window.location.hostname.includes('gemini.google');
+	const isGeminiBusiness = window.location.hostname.includes('business.gemini.google');
+	const isGemini = window.location.hostname.includes('gemini.google') && !isGeminiBusiness;
+	const isAnyGemini = isGemini || isGeminiBusiness; // 用于样式和通用逻辑
 	const isGenspark = window.location.hostname.includes('genspark.ai');
 
 	// 默认提示词库
@@ -72,7 +75,7 @@
 			this.selectedPrompt = null;
 			this.textarea = null;
 			this.isCollapsed = false;
-			this.site = isGemini ? 'gemini' : 'genspark';
+			this.site = isGeminiBusiness ? 'gemini-business' : (isGemini ? 'gemini' : 'genspark');
 			this.init();
 		}
 
@@ -154,7 +157,7 @@
                 #universal-prompt-panel.collapsed { display: none; }
                 .prompt-panel-header {
                     padding: 16px;
-                    background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
                     color: white;
                     border-radius: 12px 12px 0 0;
                     display: flex;
@@ -176,7 +179,7 @@
                     width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;
                     transition: all 0.2s; box-sizing: border-box;
                 }
-                .prompt-search-input:focus { outline: none; border-color: ${isGemini ? '#4285f4' : '#667eea'}; }
+                .prompt-search-input:focus { outline: none; border-color: ${isAnyGemini ? '#4285f4' : '#667eea'}; }
                 .prompt-categories { padding: 8px 12px; display: flex; gap: 6px; flex-wrap: wrap; background: white; border-bottom: 1px solid #e5e7eb; }
                 .category-tag {
                     padding: 4px 10px; background: #f3f4f6; border-radius: 12px; font-size: 12px; color: #4b5563;
@@ -184,7 +187,7 @@
                 }
                 .category-tag:hover { background: #e5e7eb; }
                 .category-tag.active {
-                    background: ${isGemini ? '#4285f4' : '#667eea'}; color: white; border-color: ${isGemini ? '#4285f4' : '#667eea'};
+                    background: ${isAnyGemini ? '#4285f4' : '#667eea'}; color: white; border-color: ${isAnyGemini ? '#4285f4' : '#667eea'};
                 }
                 .prompt-list { flex: 1; overflow-y: auto; padding: 8px; }
                 .prompt-item {
@@ -192,13 +195,13 @@
                     cursor: pointer; transition: all 0.2s; position: relative;
                 }
                 .prompt-item:hover {
-                    border-color: ${isGemini ? '#4285f4' : '#667eea'};
-                    box-shadow: 0 4px 12px ${isGemini ? 'rgba(66,133,244,0.15)' : 'rgba(102,126,234,0.15)'};
+                    border-color: ${isAnyGemini ? '#4285f4' : '#667eea'};
+                    box-shadow: 0 4px 12px ${isAnyGemini ? 'rgba(66,133,244,0.15)' : 'rgba(102,126,234,0.15)'};
                     transform: translateY(-2px);
                 }
                 .prompt-item.selected {
-                    background: ${isGemini ? 'linear-gradient(135deg, #e8f0fe 0%, #f1f8e9 100%)' : 'linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%)'};
-                    border-color: ${isGemini ? '#4285f4' : '#667eea'};
+                    background: ${isAnyGemini ? 'linear-gradient(135deg, #e8f0fe 0%, #f1f8e9 100%)' : 'linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%)'};
+                    border-color: ${isAnyGemini ? '#4285f4' : '#667eea'};
                 }
                 .prompt-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
                 .prompt-item-title { font-weight: 600; font-size: 14px; color: #1f2937; flex: 1; }
@@ -213,7 +216,7 @@
                 }
                 .prompt-action-btn:hover { background: #f3f4f6; transform: scale(1.1); }
                 .add-prompt-btn {
-                    margin: 12px; padding: 10px; background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    margin: 12px; padding: 10px; background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
                     color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
                     transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
                 }
@@ -236,17 +239,17 @@
                     transition: all 0.2s; box-sizing: border-box;
                 }
                 .prompt-form-textarea { min-height: 100px; resize: vertical; font-family: inherit; }
-                .prompt-form-input:focus, .prompt-form-textarea:focus { outline: none; border-color: ${isGemini ? '#4285f4' : '#667eea'}; }
+                .prompt-form-input:focus, .prompt-form-textarea:focus { outline: none; border-color: ${isAnyGemini ? '#4285f4' : '#667eea'}; }
                 .prompt-modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
                 .prompt-modal-btn { padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; }
-                .prompt-modal-btn.primary { background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'}; color: white; }
+                .prompt-modal-btn.primary { background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'}; color: white; }
                 .prompt-modal-btn.secondary { background: #f3f4f6; color: #4b5563; }
                 /* 选中的提示词显示栏 */
                 .selected-prompt-bar {
                     position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
-                    background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
                     color: white; padding: 8px 16px; border-radius: 20px; font-size: 13px; display: none;
-                    align-items: center; gap: 8px; box-shadow: 0 4px 12px ${isGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
+                    align-items: center; gap: 8px; box-shadow: 0 4px 12px ${isAnyGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
                     z-index: 999998; animation: slideInUp 0.3s;
                 }
                 @keyframes slideInUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
@@ -258,9 +261,9 @@
                 }
                 .quick-prompt-btn {
                     position: fixed; bottom: 180px; right: 30px; width: 48px; height: 48px;
-                    background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
                     border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;
-                    font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px ${isGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
+                    font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px ${isAnyGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
                     z-index: 999997; border: none; transition: transform 0.3s;
                 }
                 .quick-prompt-btn:hover { transform: scale(1.1); }
@@ -289,7 +292,7 @@
 			const title = createElementSafely('div', { className: 'prompt-panel-title' });
 			title.appendChild(createElementSafely('span', {}, '📝'));
 			title.appendChild(createElementSafely('span', {}, '提示词管理'));
-			title.appendChild(createElementSafely('span', { className: 'site-indicator' }, isGemini ? 'Gemini' : 'Genspark'));
+			title.appendChild(createElementSafely('span', { className: 'site-indicator' }, isGeminiBusiness ? 'Gemini Enterprise' : (isGemini ? 'Gemini' : 'Genspark')));
 
 			const controls = createElementSafely('div', { className: 'prompt-panel-controls' });
 			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: '刷新' }, '⟳');
@@ -420,6 +423,12 @@
 		}
 
 		insertPromptToTextarea(promptContent) {
+			// 对于商业版，使用异步查找机制
+			if (isGeminiBusiness) {
+				this.findAndInsertForBusiness(promptContent);
+				return;
+			}
+
 			if (!this.textarea || !document.body.contains(this.textarea)) {
 				this.findTextarea();
 			}
@@ -436,6 +445,90 @@
 			}
 		}
 
+		// 商业版专用：异步查找并插入（支持 Shadow DOM）
+		findAndInsertForBusiness(promptContent) {
+			// 精确的选择器，优先级从高到低
+			const selectors = [
+				'div.ProseMirror',
+				'.ProseMirror',
+				'[contenteditable="true"]:not([type="search"])',
+				'[role="textbox"]',
+				'textarea:not([type="search"])'
+			];
+
+			// 判断是否为有效的聊天输入框（排除搜索框等）
+			const isValidChatInput = (element) => {
+				// 排除搜索框
+				if (element.type === 'search') return false;
+				if (element.classList.contains('main-input')) return false;
+				if (element.getAttribute('aria-label')?.includes('搜索')) return false;
+				if (element.placeholder?.includes('搜索')) return false;
+				// 排除脚本自己的 UI
+				if (element.classList.contains('prompt-search-input')) return false;
+				if (element.id === 'prompt-search') return false;
+				return true;
+			};
+
+			// 递归搜索 Shadow DOM 的函数
+			const searchInShadowDOM = (root, depth = 0) => {
+				if (depth > 15) return null; // 防止无限递归
+
+				// 只在 Shadow Root 中搜索选择器（跳过主文档以避免匹配脚本 UI）
+				if (root !== document) {
+					for (const selector of selectors) {
+						try {
+							const elements = root.querySelectorAll(selector);
+							for (const element of elements) {
+								if (isValidChatInput(element)) {
+									return element;
+								}
+							}
+						} catch (e) {
+							// 某些选择器可能在 Shadow DOM 中不支持
+						}
+					}
+				}
+
+				// 在所有 Shadow Root 中递归搜索
+				const allElements = root.querySelectorAll('*');
+				for (const el of allElements) {
+					if (el.shadowRoot) {
+						const found = searchInShadowDOM(el.shadowRoot, depth + 1);
+						if (found) return found;
+					}
+				}
+
+				return null;
+			};
+
+			// 尝试查找元素
+			const tryFind = () => searchInShadowDOM(document);
+
+			let element = tryFind();
+
+			if (element) {
+				this.textarea = element;
+				this.insertToGeminiBusiness(promptContent);
+			} else {
+				// 轮询等待元素出现
+				this.showToast('正在等待输入框加载...');
+				let attempts = 0;
+				const maxAttempts = 15;
+				const checkInterval = setInterval(() => {
+					attempts++;
+					element = tryFind();
+					if (element) {
+						clearInterval(checkInterval);
+						this.textarea = element;
+						this.insertToGeminiBusiness(promptContent);
+					} else if (attempts >= maxAttempts) {
+						clearInterval(checkInterval);
+						this.showToast('未找到输入框，请手动点击输入框后重试');
+					}
+				}, 500);
+			}
+		}
+
 		insertToGemini(promptContent) {
 			const editor = this.textarea;
 			editor.focus();
@@ -445,12 +538,62 @@
 					throw new Error('execCommand returned false');
 				}
 			} catch (e) {
-				console.log('Gemini 插入回退模式:', e);
 				const currentContent = editor.textContent;
 				editor.textContent = currentContent + promptContent;
 				editor.dispatchEvent(new Event('input', { bubbles: true }));
 				editor.dispatchEvent(new Event('change', { bubbles: true }));
 			}
+		}
+
+		// Gemini 商业版使用 ProseMirror 编辑器
+		insertToGeminiBusiness(promptContent) {
+			const editor = this.textarea;
+			editor.click();
+			editor.focus();
+
+			// 等待一小段时间后尝试插入
+			setTimeout(() => {
+				try {
+					// 尝试使用 execCommand
+					const success = document.execCommand('insertText', false, promptContent);
+					if (!success) {
+						throw new Error('execCommand returned false');
+					}
+				} catch (e) {
+
+					// 方法2: 直接操作 DOM
+					// 查找或创建 p 元素
+					let p = editor.querySelector('p');
+					if (!p) {
+						p = document.createElement('p');
+						editor.appendChild(p);
+					}
+
+					// 清空占位符文本
+					const placeholderTexts = ['您要在网上查找什么信息', '输入提示', 'Enter a prompt'];
+					const currentText = editor.textContent || '';
+					const hasPlaceholder = placeholderTexts.some(ph => currentText.includes(ph));
+
+					if (hasPlaceholder || currentText.trim() === '') {
+						p.textContent = promptContent;
+					} else {
+						p.textContent = currentText + promptContent;
+					}
+
+					// 触发各种事件以通知 ProseMirror 更新
+					const inputEvent = new InputEvent('input', {
+						bubbles: true,
+						cancelable: true,
+						inputType: 'insertText',
+						data: promptContent
+					});
+					editor.dispatchEvent(inputEvent);
+					editor.dispatchEvent(new Event('change', { bubbles: true }));
+
+					// 尝试触发 keyup 事件
+					editor.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+				}
+			}, 100);
 		}
 
 		insertToGenspark(promptContent) {
@@ -543,7 +686,16 @@
 
 		findTextarea() {
 			let selectors = [];
-			if (isGemini) {
+			if (isGeminiBusiness) {
+				// Gemini 商业版使用 ProseMirror 编辑器
+				selectors = [
+					'div.ProseMirror[contenteditable="true"]',
+					'div.ProseMirror',
+					'[role="textbox"]',
+					'div[contenteditable="true"]'
+				];
+			} else if (isGemini) {
+				// 普通 Gemini 使用 Quill 编辑器
 				selectors = [
 					'div[contenteditable="true"].ql-editor',
 					'div[contenteditable="true"]',
@@ -562,9 +714,11 @@
 			for (const selector of selectors) {
 				const elements = document.querySelectorAll(selector);
 				for (const element of elements) {
-					if (element.offsetParent !== null) {
+					const isVisible = element.offsetParent !== null ||
+						element.classList.contains('ProseMirror') ||
+						selector.includes('ProseMirror');
+					if (isVisible) {
 						this.textarea = element;
-						console.log(`[PromptManager] 找到文本框: ${selector}`);
 						if (isGenspark) {
 							this.textarea.addEventListener('input', () => this.adjustTextareaHeight());
 						}
@@ -608,7 +762,7 @@
 			document.getElementById('clear-prompt')?.addEventListener('click', () => {
 				this.clearSelectedPrompt();
 				if (this.textarea) {
-					if (isGemini) {
+					if (isAnyGemini) {
 						this.textarea.focus();
 						document.execCommand('selectAll', false, null);
 						document.execCommand('delete', false, null);
@@ -630,8 +784,12 @@
 			this.makeDraggable();
 
 			document.addEventListener('click', (e) => {
-				if (isGemini && e.target.getAttribute('contenteditable') === 'true') {
-					this.textarea = e.target;
+				// 支持普通 Gemini 和商业版的点击检测
+				if (isAnyGemini && (e.target.getAttribute('contenteditable') === 'true' || e.target.closest('.ProseMirror'))) {
+					const editor = e.target.closest('.ProseMirror') || e.target;
+					if (editor.getAttribute('contenteditable') === 'true' || editor.classList.contains('ProseMirror')) {
+						this.textarea = editor;
+					}
 				}
 			});
 		}
