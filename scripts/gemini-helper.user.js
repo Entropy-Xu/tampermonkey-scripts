@@ -1,0 +1,683 @@
+// ==UserScript==
+// @name         Gemini 提示词管理器
+// @namespace    http://tampermonkey.net/
+// @version      1.0.0
+// @description  为 Gemini 和 Genspark 添加提示词管理功能，支持增删改查和快速插入，参考了其他朋友的实现
+// @author       urzeye
+// @match        https://gemini.google.com/*
+// @match        https://www.genspark.ai/agents*
+// @match        https://genspark.ai/agents*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_deleteValue
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+	'use strict';
+
+	// 防止重复初始化
+	if (window.promptManagerInitialized) {
+		return;
+	}
+	window.promptManagerInitialized = true;
+
+	// 检测当前网站
+	const isGemini = window.location.hostname.includes('gemini.google');
+	const isGenspark = window.location.hostname.includes('genspark.ai');
+
+	// 默认提示词库
+	const DEFAULT_PROMPTS = [
+		{
+			id: 'default_1',
+			title: '代码优化',
+			content: '请帮我优化以下代码，提高性能和可读性：\n\n',
+			category: '编程'
+		},
+		{
+			id: 'default_2',
+			title: '翻译助手',
+			content: '请将以下内容翻译成中文，保持专业术语的准确性：\n\n',
+			category: '翻译'
+		},
+	];
+
+	// 安全的 HTML 创建函数
+	function createElementSafely(tag, properties = {}, textContent = '') {
+		const element = document.createElement(tag);
+		Object.keys(properties).forEach(key => {
+			if (key === 'className') {
+				element.className = properties[key];
+			} else if (key === 'style') {
+				element.setAttribute('style', properties[key]);
+			} else {
+				element.setAttribute(key, properties[key]);
+			}
+		});
+		if (textContent) element.textContent = textContent;
+		return element;
+	}
+
+	// 安全清空元素内容
+	function clearElementSafely(element) {
+		while (element.firstChild) {
+			element.removeChild(element.firstChild);
+		}
+	}
+
+	// 提示词管理类
+	class UniversalPromptManager {
+		constructor() {
+			this.prompts = this.loadPrompts();
+			this.selectedPrompt = null;
+			this.textarea = null;
+			this.isCollapsed = false;
+			this.site = isGemini ? 'gemini' : 'genspark';
+			this.init();
+		}
+
+		loadPrompts() {
+			const saved = GM_getValue('universal_prompts', null);
+			if (!saved) {
+				GM_setValue('universal_prompts', DEFAULT_PROMPTS);
+				return DEFAULT_PROMPTS;
+			}
+			return saved;
+		}
+
+		savePrompts() {
+			GM_setValue('universal_prompts', this.prompts);
+		}
+
+		addPrompt(prompt) {
+			prompt.id = 'custom_' + Date.now();
+			this.prompts.push(prompt);
+			this.savePrompts();
+			this.refreshPromptList();
+		}
+
+		updatePrompt(id, updatedPrompt) {
+			const index = this.prompts.findIndex(p => p.id === id);
+			if (index !== -1) {
+				this.prompts[index] = { ...this.prompts[index], ...updatedPrompt };
+				this.savePrompts();
+				this.refreshPromptList();
+			}
+		}
+
+		deletePrompt(id) {
+			this.prompts = this.prompts.filter(p => p.id !== id);
+			this.savePrompts();
+			this.refreshPromptList();
+		}
+
+		getCategories() {
+			const categories = new Set();
+			this.prompts.forEach(p => {
+				if (p.category) categories.add(p.category);
+			});
+			return Array.from(categories);
+		}
+
+		init() {
+			this.createStyles();
+			this.createUI();
+			this.bindEvents();
+			this.findTextarea();
+		}
+
+		createStyles() {
+			const existingStyle = document.getElementById('universal-prompt-manager-styles');
+			if (existingStyle) existingStyle.remove();
+
+			const style = document.createElement('style');
+			style.id = 'universal-prompt-manager-styles';
+			style.textContent = `
+                /* 主面板样式 */
+                #universal-prompt-panel {
+                    position: fixed;
+                    top: 50%;
+                    right: 20px;
+                    transform: translateY(-50%);
+                    width: 320px;
+                    max-height: 70vh;
+                    background: white;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+                    z-index: 999999;
+                    display: flex;
+                    flex-direction: column;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    transition: all 0.3s ease;
+                    border: 1px solid #e0e0e0;
+                }
+                #universal-prompt-panel.collapsed { display: none; }
+                .prompt-panel-header {
+                    padding: 16px;
+                    background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    color: white;
+                    border-radius: 12px 12px 0 0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    cursor: move;
+                }
+                .prompt-panel-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+                .site-indicator { font-size: 12px; padding: 2px 6px; background: rgba(255,255,255,0.2); border-radius: 4px; margin-left: 8px; }
+                .prompt-panel-controls { display: flex; gap: 8px; }
+                .prompt-panel-btn {
+                    background: rgba(255,255,255,0.2); border: none; color: white; width: 28px; height: 28px;
+                    border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+                    transition: all 0.2s; font-size: 14px;
+                }
+                .prompt-panel-btn:hover { background: rgba(255,255,255,0.3); transform: scale(1.1); }
+                .prompt-search-bar { padding: 12px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; }
+                .prompt-search-input {
+                    width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;
+                    transition: all 0.2s; box-sizing: border-box;
+                }
+                .prompt-search-input:focus { outline: none; border-color: ${isGemini ? '#4285f4' : '#667eea'}; }
+                .prompt-categories { padding: 8px 12px; display: flex; gap: 6px; flex-wrap: wrap; background: white; border-bottom: 1px solid #e5e7eb; }
+                .category-tag {
+                    padding: 4px 10px; background: #f3f4f6; border-radius: 12px; font-size: 12px; color: #4b5563;
+                    cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
+                }
+                .category-tag:hover { background: #e5e7eb; }
+                .category-tag.active {
+                    background: ${isGemini ? '#4285f4' : '#667eea'}; color: white; border-color: ${isGemini ? '#4285f4' : '#667eea'};
+                }
+                .prompt-list { flex: 1; overflow-y: auto; padding: 8px; }
+                .prompt-item {
+                    background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+                    cursor: pointer; transition: all 0.2s; position: relative;
+                }
+                .prompt-item:hover {
+                    border-color: ${isGemini ? '#4285f4' : '#667eea'};
+                    box-shadow: 0 4px 12px ${isGemini ? 'rgba(66,133,244,0.15)' : 'rgba(102,126,234,0.15)'};
+                    transform: translateY(-2px);
+                }
+                .prompt-item.selected {
+                    background: ${isGemini ? 'linear-gradient(135deg, #e8f0fe 0%, #f1f8e9 100%)' : 'linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%)'};
+                    border-color: ${isGemini ? '#4285f4' : '#667eea'};
+                }
+                .prompt-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+                .prompt-item-title { font-weight: 600; font-size: 14px; color: #1f2937; flex: 1; }
+                .prompt-item-category { font-size: 11px; padding: 2px 6px; background: #f3f4f6; border-radius: 4px; color: #6b7280; }
+                .prompt-item-content { font-size: 13px; color: #6b7280; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+                .prompt-item-actions { position: absolute; top: 8px; right: 8px; display: none; gap: 4px; }
+                .prompt-item:hover .prompt-item-actions { display: flex; }
+                .prompt-action-btn {
+                    width: 24px; height: 24px; border: none; background: white; border-radius: 4px; cursor: pointer;
+                    display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 12px;
+                }
+                .prompt-action-btn:hover { background: #f3f4f6; transform: scale(1.1); }
+                .add-prompt-btn {
+                    margin: 12px; padding: 10px; background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+                    transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+                }
+                .add-prompt-btn:hover { transform: translateY(-2px); }
+                /* 模态框 */
+                .prompt-modal {
+                    position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5);
+                    display: flex; align-items: center; justify-content: center; z-index: 1000000; animation: fadeIn 0.2s;
+                }
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                .prompt-modal-content {
+                    background: white; border-radius: 12px; width: 90%; max-width: 500px; padding: 24px; animation: slideUp 0.3s;
+                }
+                @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+                .prompt-modal-header { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: #1f2937; }
+                .prompt-form-group { margin-bottom: 16px; }
+                .prompt-form-label { display: block; font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 6px; }
+                .prompt-form-input, .prompt-form-textarea {
+                    width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;
+                    transition: all 0.2s; box-sizing: border-box;
+                }
+                .prompt-form-textarea { min-height: 100px; resize: vertical; font-family: inherit; }
+                .prompt-form-input:focus, .prompt-form-textarea:focus { outline: none; border-color: ${isGemini ? '#4285f4' : '#667eea'}; }
+                .prompt-modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+                .prompt-modal-btn { padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; }
+                .prompt-modal-btn.primary { background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'}; color: white; }
+                .prompt-modal-btn.secondary { background: #f3f4f6; color: #4b5563; }
+                /* 选中的提示词显示栏 */
+                .selected-prompt-bar {
+                    position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+                    background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    color: white; padding: 8px 16px; border-radius: 20px; font-size: 13px; display: none;
+                    align-items: center; gap: 8px; box-shadow: 0 4px 12px ${isGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
+                    z-index: 999998; animation: slideInUp 0.3s;
+                }
+                @keyframes slideInUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+                .selected-prompt-bar.show { display: flex; }
+                .selected-prompt-text { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .clear-prompt-btn {
+                    background: rgba(255,255,255,0.2); border: none; color: white; width: 20px; height: 20px;
+                    border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+                }
+                .quick-prompt-btn {
+                    position: fixed; bottom: 180px; right: 30px; width: 48px; height: 48px;
+                    background: ${isGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;
+                    font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px ${isGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
+                    z-index: 999997; border: none; transition: transform 0.3s;
+                }
+                .quick-prompt-btn:hover { transform: scale(1.1); }
+                .quick-prompt-btn.hidden { display: none; }
+                .prompt-toast {
+                    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981;
+                    color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000001; animation: toastSlideIn 0.3s;
+                }
+                @keyframes toastSlideIn { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+            `;
+			document.head.appendChild(style);
+		}
+
+		createUI() {
+			const existingPanel = document.getElementById('universal-prompt-panel');
+			const existingBar = document.querySelector('.selected-prompt-bar');
+			const existingBtn = document.querySelector('.quick-prompt-btn');
+
+			if (existingPanel) existingPanel.remove();
+			if (existingBar) existingBar.remove();
+			if (existingBtn) existingBtn.remove();
+
+			const panel = createElementSafely('div', { id: 'universal-prompt-panel' });
+			const header = createElementSafely('div', { className: 'prompt-panel-header' });
+			const title = createElementSafely('div', { className: 'prompt-panel-title' });
+			title.appendChild(createElementSafely('span', {}, '📝'));
+			title.appendChild(createElementSafely('span', {}, '提示词管理'));
+			title.appendChild(createElementSafely('span', { className: 'site-indicator' }, isGemini ? 'Gemini' : 'Genspark'));
+
+			const controls = createElementSafely('div', { className: 'prompt-panel-controls' });
+			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: '刷新' }, '⟳');
+			const toggleBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: '收起' }, '−');
+			controls.appendChild(refreshBtn);
+			controls.appendChild(toggleBtn);
+
+			header.appendChild(title);
+			header.appendChild(controls);
+
+			const searchBar = createElementSafely('div', { className: 'prompt-search-bar' });
+			const searchInput = createElementSafely('input', { className: 'prompt-search-input', id: 'prompt-search', type: 'text', placeholder: '搜索提示词...' });
+			searchBar.appendChild(searchInput);
+
+			const categories = createElementSafely('div', { className: 'prompt-categories', id: 'prompt-categories' });
+			const list = createElementSafely('div', { className: 'prompt-list', id: 'prompt-list' });
+
+			const addBtn = createElementSafely('button', { className: 'add-prompt-btn', id: 'add-prompt' });
+			addBtn.appendChild(createElementSafely('span', {}, '+'));
+			addBtn.appendChild(createElementSafely('span', {}, '添加新提示词'));
+
+			panel.appendChild(header);
+			panel.appendChild(searchBar);
+			panel.appendChild(categories);
+			panel.appendChild(list);
+			panel.appendChild(addBtn);
+
+			document.body.appendChild(panel);
+
+			const selectedBar = createElementSafely('div', { className: 'selected-prompt-bar' });
+			selectedBar.appendChild(createElementSafely('span', {}, '当前提示词：'));
+			selectedBar.appendChild(createElementSafely('span', { className: 'selected-prompt-text', id: 'selected-prompt-text' }));
+			const clearBtn = createElementSafely('button', { className: 'clear-prompt-btn', id: 'clear-prompt' }, '×');
+			selectedBar.appendChild(clearBtn);
+			document.body.appendChild(selectedBar);
+
+			const quickBtn = createElementSafely('button', { className: 'quick-prompt-btn', title: '打开提示词管理器' }, '📝');
+			quickBtn.addEventListener('click', () => { this.togglePanel(); });
+			document.body.appendChild(quickBtn);
+
+			this.refreshCategories();
+			this.refreshPromptList();
+		}
+
+		togglePanel() {
+			const panel = document.getElementById('universal-prompt-panel');
+			const quickBtn = document.querySelector('.quick-prompt-btn');
+			const toggleBtn = document.getElementById('toggle-panel');
+			this.isCollapsed = !this.isCollapsed;
+
+			if (this.isCollapsed) {
+				panel.classList.add('collapsed');
+				quickBtn.classList.remove('hidden');
+				if (toggleBtn) toggleBtn.textContent = '+';
+			} else {
+				panel.classList.remove('collapsed');
+				quickBtn.classList.add('hidden');
+				if (toggleBtn) toggleBtn.textContent = '−';
+			}
+		}
+
+		refreshCategories() {
+			const container = document.getElementById('prompt-categories');
+			if (!container) return;
+			const categories = this.getCategories();
+			clearElementSafely(container);
+			container.appendChild(createElementSafely('span', { className: 'category-tag active', 'data-category': 'all' }, '全部'));
+			categories.forEach(cat => {
+				container.appendChild(createElementSafely('span', { className: 'category-tag', 'data-category': cat }, cat));
+			});
+		}
+
+		refreshPromptList(filter = '') {
+			const container = document.getElementById('prompt-list');
+			if (!container) return;
+			const activeCategory = document.querySelector('.category-tag.active')?.dataset.category || 'all';
+			let filteredPrompts = this.prompts;
+
+			if (activeCategory !== 'all') filteredPrompts = filteredPrompts.filter(p => p.category === activeCategory);
+			if (filter) filteredPrompts = filteredPrompts.filter(p => p.title.toLowerCase().includes(filter.toLowerCase()) || p.content.toLowerCase().includes(filter.toLowerCase()));
+
+			clearElementSafely(container);
+
+			if (filteredPrompts.length === 0) {
+				container.appendChild(createElementSafely('div', { style: 'text-align: center; padding: 20px; color: #9ca3af;' }, '暂无提示词'));
+				return;
+			}
+
+			filteredPrompts.forEach(prompt => {
+				const item = createElementSafely('div', { className: 'prompt-item' });
+				if (this.selectedPrompt?.id === prompt.id) item.classList.add('selected');
+
+				const itemHeader = createElementSafely('div', { className: 'prompt-item-header' });
+				itemHeader.appendChild(createElementSafely('div', { className: 'prompt-item-title' }, prompt.title));
+				itemHeader.appendChild(createElementSafely('span', { className: 'prompt-item-category' }, prompt.category || '未分类'));
+
+				const itemContent = createElementSafely('div', { className: 'prompt-item-content' }, prompt.content);
+				const itemActions = createElementSafely('div', { className: 'prompt-item-actions' });
+				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn edit-prompt', 'data-id': prompt.id, title: '编辑' }, '✏'));
+				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn delete-prompt', 'data-id': prompt.id, title: '删除' }, '🗑'));
+
+				item.appendChild(itemHeader);
+				item.appendChild(itemContent);
+				item.appendChild(itemActions);
+				item.appendChild(itemActions);
+
+				item.addEventListener('click', (e) => {
+					if (!e.target.closest('.prompt-item-actions')) this.selectPrompt(prompt, item);
+				});
+				container.appendChild(item);
+			});
+		}
+
+		selectPrompt(prompt, itemElement) {
+			this.selectedPrompt = prompt;
+			document.querySelectorAll('.prompt-item').forEach(item => item.classList.remove('selected'));
+			itemElement.classList.add('selected');
+
+			const selectedBar = document.querySelector('.selected-prompt-bar');
+			const selectedText = document.getElementById('selected-prompt-text');
+			if (selectedBar && selectedText) {
+				selectedText.textContent = prompt.title;
+				selectedBar.classList.add('show');
+			}
+
+			this.insertPromptToTextarea(prompt.content);
+			this.showToast(`已插入提示词: ${prompt.title}`);
+		}
+
+		insertPromptToTextarea(promptContent) {
+			if (!this.textarea || !document.body.contains(this.textarea)) {
+				this.findTextarea();
+			}
+
+			if (this.textarea) {
+				if (isGemini) {
+					this.insertToGemini(promptContent);
+				} else {
+					this.insertToGenspark(promptContent);
+				}
+			} else {
+				this.showToast('未找到输入框，请点击输入框后重试');
+				this.findTextarea();
+			}
+		}
+
+		insertToGemini(promptContent) {
+			const editor = this.textarea;
+			editor.focus();
+			try {
+				const success = document.execCommand('insertText', false, promptContent);
+				if (!success) {
+					throw new Error('execCommand returned false');
+				}
+			} catch (e) {
+				console.log('Gemini 插入回退模式:', e);
+				const currentContent = editor.textContent;
+				editor.textContent = currentContent + promptContent;
+				editor.dispatchEvent(new Event('input', { bubbles: true }));
+				editor.dispatchEvent(new Event('change', { bubbles: true }));
+			}
+		}
+
+		insertToGenspark(promptContent) {
+			const textarea = this.textarea;
+			const currentContent = textarea.value.trim();
+			textarea.value = currentContent ? (promptContent + '\n\n' + currentContent) : (promptContent + '\n\n');
+			this.adjustTextareaHeight();
+			textarea.dispatchEvent(new Event('input', { bubbles: true }));
+			textarea.focus();
+		}
+
+		adjustTextareaHeight() {
+			if (this.textarea && isGenspark) {
+				this.textarea.style.height = 'auto';
+				this.textarea.style.height = Math.min(this.textarea.scrollHeight, 200) + 'px';
+			}
+		}
+
+		clearSelectedPrompt() {
+			this.selectedPrompt = null;
+			document.querySelector('.selected-prompt-bar')?.classList.remove('show');
+			document.querySelectorAll('.prompt-item').forEach(item => item.classList.remove('selected'));
+		}
+
+		showEditModal(prompt = null) {
+			const isEdit = prompt !== null;
+			const modal = createElementSafely('div', { className: 'prompt-modal' });
+			const modalContent = createElementSafely('div', { className: 'prompt-modal-content' });
+
+			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, isEdit ? '编辑提示词' : '添加新提示词');
+
+			const titleGroup = createElementSafely('div', { className: 'prompt-form-group' });
+			titleGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, '标题'));
+			const titleInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? prompt.title : '' });
+			titleGroup.appendChild(titleInput);
+
+			const categoryGroup = createElementSafely('div', { className: 'prompt-form-group' });
+			categoryGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, '分类'));
+			const categoryInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? (prompt.category || '') : '', placeholder: '例如：编程、翻译' });
+			categoryGroup.appendChild(categoryInput);
+
+			const contentGroup = createElementSafely('div', { className: 'prompt-form-group' });
+			contentGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, '提示词内容'));
+			const contentTextarea = createElementSafely('textarea', { className: 'prompt-form-textarea' });
+			contentTextarea.value = isEdit ? prompt.content : '';
+			contentGroup.appendChild(contentTextarea);
+
+			const modalActions = createElementSafely('div', { className: 'prompt-modal-actions' });
+			const cancelBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, '取消');
+			const saveBtn = createElementSafely('button', { className: 'prompt-modal-btn primary' }, isEdit ? '保存' : '添加');
+
+			modalActions.appendChild(cancelBtn);
+			modalActions.appendChild(saveBtn);
+
+			modalContent.appendChild(modalHeader);
+			modalContent.appendChild(titleGroup);
+			modalContent.appendChild(categoryGroup);
+			modalContent.appendChild(contentGroup);
+			modalContent.appendChild(modalActions);
+			modal.appendChild(modalContent);
+			document.body.appendChild(modal);
+
+			cancelBtn.addEventListener('click', () => modal.remove());
+			saveBtn.addEventListener('click', () => {
+				const title = titleInput.value.trim();
+				const content = contentTextarea.value.trim();
+				if (!title || !content) { alert('请填写标题和内容'); return; }
+
+				if (isEdit) {
+					this.updatePrompt(prompt.id, { title, category: categoryInput.value.trim(), content });
+					this.showToast('提示词已更新');
+				} else {
+					this.addPrompt({ title, category: categoryInput.value.trim(), content });
+					this.showToast('提示词已添加');
+				}
+				modal.remove();
+			});
+
+			modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+		}
+
+		showToast(message) {
+			const toast = createElementSafely('div', { className: 'prompt-toast' }, message);
+			document.body.appendChild(toast);
+			setTimeout(() => {
+				toast.style.animation = 'toastSlideIn 0.3s reverse';
+				setTimeout(() => toast.remove(), 300);
+			}, 2000);
+		}
+
+		findTextarea() {
+			let selectors = [];
+			if (isGemini) {
+				selectors = [
+					'div[contenteditable="true"].ql-editor',
+					'div[contenteditable="true"]',
+					'[role="textbox"]',
+					'[aria-label*="Enter a prompt"]'
+				];
+			} else {
+				selectors = [
+					'textarea[name="query"]',
+					'textarea.search-input',
+					'.textarea-wrapper textarea',
+					'textarea[placeholder*="Message"]'
+				];
+			}
+
+			for (const selector of selectors) {
+				const elements = document.querySelectorAll(selector);
+				for (const element of elements) {
+					if (element.offsetParent !== null) {
+						this.textarea = element;
+						console.log(`[PromptManager] 找到文本框: ${selector}`);
+						if (isGenspark) {
+							this.textarea.addEventListener('input', () => this.adjustTextareaHeight());
+						}
+						return true;
+					}
+				}
+			}
+
+			setTimeout(() => this.findTextarea(), 1500);
+			return false;
+		}
+
+		bindEvents() {
+			const searchInput = document.getElementById('prompt-search');
+			if (searchInput) searchInput.addEventListener('input', (e) => this.refreshPromptList(e.target.value));
+
+			const categories = document.getElementById('prompt-categories');
+			if (categories) {
+				categories.addEventListener('click', (e) => {
+					if (e.target.classList.contains('category-tag')) {
+						document.querySelectorAll('.category-tag').forEach(tag => tag.classList.remove('active'));
+						e.target.classList.add('active');
+						this.refreshPromptList(document.getElementById('prompt-search')?.value || '');
+					}
+				});
+			}
+
+			document.getElementById('add-prompt')?.addEventListener('click', () => this.showEditModal());
+			document.getElementById('prompt-list')?.addEventListener('click', (e) => {
+				if (e.target.classList.contains('edit-prompt')) {
+					const prompt = this.prompts.find(p => p.id === e.target.dataset.id);
+					if (prompt) this.showEditModal(prompt);
+				} else if (e.target.classList.contains('delete-prompt')) {
+					if (confirm('确定删除?')) {
+						this.deletePrompt(e.target.dataset.id);
+						this.showToast('已删除');
+					}
+				}
+			});
+
+			document.getElementById('clear-prompt')?.addEventListener('click', () => {
+				this.clearSelectedPrompt();
+				if (this.textarea) {
+					if (isGemini) {
+						this.textarea.focus();
+						document.execCommand('selectAll', false, null);
+						document.execCommand('delete', false, null);
+					} else {
+						this.textarea.value = '';
+						this.textarea.dispatchEvent(new Event('input', { bubbles: true }));
+					}
+				}
+				this.showToast('已清除内容');
+			});
+
+			document.getElementById('refresh-prompts')?.addEventListener('click', () => {
+				this.refreshPromptList();
+				this.findTextarea();
+				this.showToast('已刷新');
+			});
+
+			document.getElementById('toggle-panel')?.addEventListener('click', () => this.togglePanel());
+			this.makeDraggable();
+
+			document.addEventListener('click', (e) => {
+				if (isGemini && e.target.getAttribute('contenteditable') === 'true') {
+					this.textarea = e.target;
+				}
+			});
+		}
+
+		makeDraggable() {
+			const panel = document.getElementById('universal-prompt-panel');
+			const header = panel?.querySelector('.prompt-panel-header');
+			if (!panel || !header) return;
+
+			let isDragging = false, currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
+
+			header.addEventListener('mousedown', (e) => {
+				if (e.target.closest('.prompt-panel-controls')) return;
+				initialX = e.clientX - xOffset;
+				initialY = e.clientY - yOffset;
+				isDragging = true;
+			});
+
+			document.addEventListener('mousemove', (e) => {
+				if (isDragging) {
+					e.preventDefault();
+					currentX = e.clientX - initialX;
+					currentY = e.clientY - initialY;
+					xOffset = currentX;
+					yOffset = currentY;
+					panel.style.transform = `translate(${currentX}px, ${currentY}px)`;
+				}
+			});
+
+			document.addEventListener('mouseup', () => { isDragging = false; });
+		}
+	}
+
+	function init() {
+		setTimeout(() => {
+			try {
+				new UniversalPromptManager();
+			} catch (error) {
+				console.error('提示词管理器启动失败', error);
+			}
+		}, 2000);
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', init);
+	} else {
+		init();
+	}
+})();
