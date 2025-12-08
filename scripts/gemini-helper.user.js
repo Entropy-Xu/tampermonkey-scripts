@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.4.3
+// @version      1.4.4
 // @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @match        https://gemini.google.com/*
@@ -827,13 +827,18 @@
 			const editor = this.textarea;
 			editor.focus();
 			try {
+				// 先清空内容：全选 + 删除
+				document.execCommand('selectAll', false, null);
+				document.execCommand('delete', false, null);
+
+				// 然后插入新内容
 				const success = document.execCommand('insertText', false, promptContent);
 				if (!success) {
 					throw new Error('execCommand returned false');
 				}
 			} catch (e) {
-				const currentContent = editor.textContent;
-				editor.textContent = currentContent + promptContent;
+				// 降级方案：直接替换内容，不叠加
+				editor.textContent = promptContent;
 				editor.dispatchEvent(new Event('input', { bubbles: true }));
 				editor.dispatchEvent(new Event('change', { bubbles: true }));
 			}
@@ -848,13 +853,16 @@
 			// 等待一小段时间后尝试插入
 			setTimeout(() => {
 				try {
-					// 尝试使用 execCommand
+					// 先清空内容：全选 + 删除
+					document.execCommand('selectAll', false, null);
+					document.execCommand('delete', false, null);
+
+					// 然后插入新内容
 					const success = document.execCommand('insertText', false, promptContent);
 					if (!success) {
 						throw new Error('execCommand returned false');
 					}
 				} catch (e) {
-
 					// 方法2: 直接操作 DOM
 					// 查找或创建 p 元素
 					let p = editor.querySelector('p');
@@ -863,16 +871,8 @@
 						editor.appendChild(p);
 					}
 
-					// 清空占位符文本
-					const placeholderTexts = ['您要在网上查找什么信息', '输入提示', 'Enter a prompt'];
-					const currentText = editor.textContent || '';
-					const hasPlaceholder = placeholderTexts.some(ph => currentText.includes(ph));
-
-					if (hasPlaceholder || currentText.trim() === '') {
-						p.textContent = promptContent;
-					} else {
-						p.textContent = currentText + promptContent;
-					}
+					// 直接替换内容，不管原来有什么
+					p.textContent = promptContent;
 
 					// 触发各种事件以通知 ProseMirror 更新
 					const inputEvent = new InputEvent('input', {

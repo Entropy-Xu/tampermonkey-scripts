@@ -1,5 +1,25 @@
 # Gemini 提示词管理器 - 变更日志
 
+## 版本 1.4.4 (2024-12-08) - [e057454](https://github.com/urzeye/tampermonkey-scripts/commit/e057454)
+
+### 修复问题：切换提示词时内容叠加
+
+**问题描述**：切换提示词时，新提示词内容会叠加到旧内容末尾，而不是替换。
+
+#### 修复方案
+
+**Gemini 普通版**：
+
+- 在 `insertToGemini` 方法中，插入前先执行 `selectAll` + `delete` 清空内容
+- 降级方案改为直接替换 `editor.textContent`，不再叠加
+
+**Gemini Business 版**：
+
+- 在 `insertToGeminiBusiness` 方法中，插入前先执行 `selectAll` + `delete` 清空内容
+- 降级方案改为直接替换 `p.textContent`，移除了占位符检测逻辑
+
+---
+
 ## 版本 1.4.3 (2024-12-08) - [9887b4c](https://github.com/urzeye/tampermonkey-scripts/commit/9887b4c)
 
 ### 优化功能：拖动悬浮窗体验
