@@ -411,13 +411,6 @@
 			document.querySelectorAll('.prompt-item').forEach(item => item.classList.remove('selected'));
 			itemElement.classList.add('selected');
 
-			const selectedBar = document.querySelector('.selected-prompt-bar');
-			const selectedText = document.getElementById('selected-prompt-text');
-			if (selectedBar && selectedText) {
-				selectedText.textContent = prompt.title;
-				selectedBar.classList.add('show');
-			}
-
 			this.insertPromptToTextarea(prompt.content);
 			this.showToast(`已插入提示词: ${prompt.title}`);
 		}
