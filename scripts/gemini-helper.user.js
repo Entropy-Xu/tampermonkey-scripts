@@ -1,17 +1,20 @@
 // ==UserScript==
-// @name         Gemini 提示词管理器
+// @name         Gemini-helper
 // @namespace    http://tampermonkey.net/
 // @version      1.3.0
-// @description  为 Gemini、Gemini Enterprise 和 Genspark 添加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
+// @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @match        https://gemini.google.com/*
 // @match        https://business.gemini.google/*
 // @match        https://www.genspark.ai/agents*
 // @match        https://genspark.ai/agents*
-// @grant        GM_setValue
+// @icon         https://raw.githubusercontent.com/gist/urzeye/8d1d3afbbcd0193dbc8a2019b1ba54d3/raw/f7113d329a259963ed1b1ab8cb981e8f635d4cea/gemini.svg @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @run-at       document-idle
+// @supportURL   https://github.com/urzeye/tampermonkey-scripts/issues
+// @homepageURL  https://github.com/urzeye/tampermonkey-scripts
+// @license      MIT
 // ==/UserScript==
 
 (function () {
