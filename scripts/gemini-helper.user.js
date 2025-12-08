@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gemini 提示词管理器
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
-// @description  为 Gemini、Gemini Enterprise 和 Genspark 添加提示词管理功能，支持增删改查和快速插入
+// @version      1.2.0
+// @description  为 Gemini、Gemini Enterprise 和 Genspark 添加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @match        https://gemini.google.com/*
 // @match        https://business.gemini.google/*
@@ -260,20 +260,38 @@
                     border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
                 }
                 .quick-prompt-btn {
-                    position: fixed; bottom: 180px; right: 30px; width: 48px; height: 48px;
+                    width: 44px; height: 44px;
                     background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
                     border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;
-                    font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px ${isAnyGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
-                    z-index: 999997; border: none; transition: transform 0.3s;
+                    font-size: 18px; cursor: pointer; box-shadow: 0 4px 12px ${isAnyGemini ? 'rgba(66,133,244,0.3)' : 'rgba(102,126,234,0.3)'};
+                    border: none; transition: transform 0.3s;
                 }
                 .quick-prompt-btn:hover { transform: scale(1.1); }
-                .quick-prompt-btn.hidden { display: none; }
+                /* 快捷按钮组（收起时显示） */
+                .quick-btn-group {
+                    position: fixed; bottom: 100px; right: 30px; display: flex; flex-direction: column; gap: 10px;
+                    z-index: 999997; transition: opacity 0.3s;
+                }
+                .quick-btn-group.hidden { display: none; }
                 .prompt-toast {
                     position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981;
                     color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000001; animation: toastSlideIn 0.3s;
                 }
                 @keyframes toastSlideIn { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+                /* 快捷跳转按钮组（面板内） */
+                .scroll-nav-container {
+                    display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #e5e7eb;
+                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                    border-radius: 0 0 12px 12px; justify-content: center;
+                }
+                .scroll-nav-btn {
+                    flex: 1; max-width: 120px; height: 32px; border-radius: 8px; border: none; cursor: pointer;
+                    display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; gap: 4px;
+                    background: ${isAnyGemini ? 'linear-gradient(135deg, #4285f4 0%, #34a853 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.15); transition: transform 0.2s, box-shadow 0.2s;
+                }
+                .scroll-nav-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
             `;
 			document.head.appendChild(style);
 		}
@@ -329,9 +347,32 @@
 			selectedBar.appendChild(clearBtn);
 			document.body.appendChild(selectedBar);
 
+			// 快捷按钮组（收起时显示）
+			const quickBtnGroup = createElementSafely('div', { className: 'quick-btn-group hidden', id: 'quick-btn-group' });
 			const quickBtn = createElementSafely('button', { className: 'quick-prompt-btn', title: '打开提示词管理器' }, '📝');
+			const quickScrollTop = createElementSafely('button', { className: 'quick-prompt-btn', title: '跳转到顶部' }, '⬆');
+			const quickScrollBottom = createElementSafely('button', { className: 'quick-prompt-btn', title: '跳转到底部' }, '⬇');
 			quickBtn.addEventListener('click', () => { this.togglePanel(); });
-			document.body.appendChild(quickBtn);
+			quickScrollTop.addEventListener('click', () => this.scrollToTop());
+			quickScrollBottom.addEventListener('click', () => this.scrollToBottom());
+			quickBtnGroup.appendChild(quickScrollTop);
+			quickBtnGroup.appendChild(quickBtn);
+			quickBtnGroup.appendChild(quickScrollBottom);
+			document.body.appendChild(quickBtnGroup);
+
+			// 快捷跳转按钮组 - 放在面板底部
+			const scrollNavContainer = createElementSafely('div', { className: 'scroll-nav-container', id: 'scroll-nav-container' });
+			const scrollTopBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-top-btn', title: '跳转到顶部' });
+			scrollTopBtn.appendChild(createElementSafely('span', {}, '⬆'));
+			scrollTopBtn.appendChild(createElementSafely('span', {}, '顶部'));
+			const scrollBottomBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-bottom-btn', title: '跳转到底部' });
+			scrollBottomBtn.appendChild(createElementSafely('span', {}, '⬇'));
+			scrollBottomBtn.appendChild(createElementSafely('span', {}, '底部'));
+			scrollTopBtn.addEventListener('click', () => this.scrollToTop());
+			scrollBottomBtn.addEventListener('click', () => this.scrollToBottom());
+			scrollNavContainer.appendChild(scrollTopBtn);
+			scrollNavContainer.appendChild(scrollBottomBtn);
+			panel.appendChild(scrollNavContainer);
 
 			this.refreshCategories();
 			this.refreshPromptList();
@@ -339,19 +380,86 @@
 
 		togglePanel() {
 			const panel = document.getElementById('universal-prompt-panel');
-			const quickBtn = document.querySelector('.quick-prompt-btn');
+			const quickBtnGroup = document.getElementById('quick-btn-group');
 			const toggleBtn = document.getElementById('toggle-panel');
 			this.isCollapsed = !this.isCollapsed;
 
 			if (this.isCollapsed) {
 				panel.classList.add('collapsed');
-				quickBtn.classList.remove('hidden');
+				if (quickBtnGroup) quickBtnGroup.classList.remove('hidden');
 				if (toggleBtn) toggleBtn.textContent = '+';
 			} else {
 				panel.classList.remove('collapsed');
-				quickBtn.classList.add('hidden');
+				if (quickBtnGroup) quickBtnGroup.classList.add('hidden');
 				if (toggleBtn) toggleBtn.textContent = '−';
 			}
+		}
+
+		// 滚动到页面顶部
+		scrollToTop() {
+			const scrollContainer = this.getScrollContainer();
+			scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+		}
+
+		// 滚动到页面底部
+		scrollToBottom() {
+			const scrollContainer = this.getScrollContainer();
+			scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+		}
+
+		// 获取滚动容器（Gemini 页面可能使用自定义滚动容器或 Shadow DOM）
+		getScrollContainer() {
+			// 优先查找 Shadow DOM 中的滚动容器（Gemini Business）
+			const scrollContainerFromShadow = this.findScrollContainerInShadowDOM(document);
+			if (scrollContainerFromShadow) {
+				return scrollContainerFromShadow;
+			}
+
+			// 尝试查找主文档中的滚动容器
+			const selectors = [
+				'.chat-mode-scroller',
+				'main',
+				'[role="main"]',
+				'.conversation-container',
+				'.chat-container'
+			];
+
+			for (const selector of selectors) {
+				const el = document.querySelector(selector);
+				if (el && el.scrollHeight > el.clientHeight) {
+					return el;
+				}
+			}
+
+			// 回退到 document.documentElement 或 body
+			if (document.documentElement.scrollHeight > document.documentElement.clientHeight) {
+				return document.documentElement;
+			}
+			return document.body;
+		}
+
+		// 在 Shadow DOM 中递归查找滚动容器
+		findScrollContainerInShadowDOM(root, depth = 0) {
+			if (depth > 10) return null;
+
+			const allElements = root.querySelectorAll('*');
+			for (const el of allElements) {
+				// 检查是否是可滚动元素
+				if (el.scrollHeight > el.clientHeight + 100) {
+					const style = window.getComputedStyle(el);
+					if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+						style.overflow === 'auto' || style.overflow === 'scroll') {
+						return el;
+					}
+				}
+
+				// 递归检查 Shadow DOM
+				if (el.shadowRoot) {
+					const found = this.findScrollContainerInShadowDOM(el.shadowRoot, depth + 1);
+					if (found) return found;
+				}
+			}
+			return null;
 		}
 
 		refreshCategories() {
