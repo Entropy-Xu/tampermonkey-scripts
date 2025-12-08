@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @match        https://gemini.google.com/*
@@ -630,6 +630,7 @@
 
 				const itemContent = createElementSafely('div', { className: 'prompt-item-content' }, prompt.content);
 				const itemActions = createElementSafely('div', { className: 'prompt-item-actions' });
+				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn copy-prompt', 'data-id': prompt.id, title: '复制' }, '📋'));
 				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn edit-prompt', 'data-id': prompt.id, title: '编辑' }, '✏'));
 				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn delete-prompt', 'data-id': prompt.id, title: '删除' }, '🗑'));
 
@@ -995,6 +996,22 @@
 					if (confirm('确定删除?')) {
 						this.deletePrompt(e.target.dataset.id);
 						this.showToast('已删除');
+					}
+				} else if (e.target.classList.contains('copy-prompt')) {
+					const prompt = this.prompts.find(p => p.id === e.target.dataset.id);
+					if (prompt) {
+						navigator.clipboard.writeText(prompt.content).then(() => {
+							this.showToast('已复制到剪贴板');
+						}).catch(() => {
+							// 降级方案：使用旧方法
+							const textarea = document.createElement('textarea');
+							textarea.value = prompt.content;
+							document.body.appendChild(textarea);
+							textarea.select();
+							document.execCommand('copy');
+							document.body.removeChild(textarea);
+							this.showToast('已复制到剪贴板');
+						});
 					}
 				}
 			});
