@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.5.1
+// @version      1.5.2
 // @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @match        https://gemini.google.com/*
@@ -1037,7 +1037,7 @@
 			}
 
 			filteredPrompts.forEach((prompt, index) => {
-				const item = createElementSafely('div', { className: 'prompt-item', draggable: 'true' });
+				const item = createElementSafely('div', { className: 'prompt-item', draggable: 'false', style: 'user-select: none;' });
 				item.dataset.promptId = prompt.id;
 				item.dataset.index = index;
 				if (this.selectedPrompt?.id === prompt.id) item.classList.add('selected');
@@ -1050,6 +1050,18 @@
 				const itemActions = createElementSafely('div', { className: 'prompt-item-actions' });
 				const dragBtn = createElementSafely('button', { className: 'prompt-action-btn drag-prompt', 'data-id': prompt.id, title: '拖动排序' }, '☰');
 				dragBtn.style.cursor = 'grab';
+
+				// 仅当按下拖拽按钮时才允许拖动
+				dragBtn.addEventListener('mousedown', () => {
+					item.setAttribute('draggable', 'true');
+					// 监听全局鼠标释放，恢复不可拖动
+					const upHandler = () => {
+						item.setAttribute('draggable', 'false');
+						window.removeEventListener('mouseup', upHandler);
+					};
+					window.addEventListener('mouseup', upHandler);
+				});
+
 				itemActions.appendChild(dragBtn);
 				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn copy-prompt', 'data-id': prompt.id, title: '复制' }, '📋'));
 				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn edit-prompt', 'data-id': prompt.id, title: '编辑' }, '✏'));
@@ -1087,6 +1099,7 @@
 
 				item.addEventListener('dragend', () => {
 					item.classList.remove('dragging');
+					item.setAttribute('draggable', 'false'); // 拖拽结束立即恢复
 					this.updatePromptOrder();
 				});
 
