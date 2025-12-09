@@ -4,6 +4,7 @@
 // @version      1.5.3
 // @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
+// @note         参考 https://linux.do/t/topic/925110 的代码与UI布局拓展实现
 // @match        https://gemini.google.com/*
 // @match        https://business.gemini.google/*
 // @match        https://www.genspark.ai/agents*
