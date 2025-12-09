@@ -30,9 +30,9 @@
 - 渐变色主题，美观大方
 - 悬浮条显示当前提示词，支持一键清除
 
-![功能主图](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/images/gemini-helper/gemini-helper-1.png "功能主图")
-![分类管理](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/images/gemini-helper/gemini-helper-2.png "分类管理")
-![折叠状态](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/images/gemini-helper/gemini-helper-3.png "折叠状态")
+![功能主图](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-1.png)
+![分类管理](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-2.png)
+![折叠状态](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-3.png)
 
 ## 🔧 使用方法
 
