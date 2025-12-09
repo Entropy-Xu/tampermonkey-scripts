@@ -1,6 +1,62 @@
 # Gemini 提示词管理器 - 变更日志
 
-## 版本 1.4.5 (2025-12-08) - [bd3df12](https://github.com/urzeye/tampermonkey-scripts/commit/bd3df12)
+## 版本 1.5.0 (2025-12-09) - [aad4ddc](https://github.com/urzeye/tampermonkey-scripts/commit/aad4ddc)
+
+### 重构：引入站点适配器模式 (Site Adapter Pattern)
+
+**核心改进**：为了提高代码的可维护性和扩展性，本次版本彻底重构了底层架构，引入了站点适配器模式。现在添加对新 AI 站点的支持变得异常简单。
+
+#### 架构变更
+
+- **SiteAdapter (基类)**: 定义了统一的接口（匹配规则、主题色、输入框查找、内容插入等）。
+- **SiteRegistry (注册表)**: 统一管理所有适配器，自动检测当前运行环境。
+- **UniversalPromptManager**: 不再包含特定站点的 `if/else` 逻辑，完全解耦。
+
+#### 代码实现预览
+
+```javascript
+/**
+ * 站点适配器基类
+ */
+class SiteAdapter {
+  match() {
+    throw new Error("必须实现 match()");
+  }
+  getName() {
+    throw new Error("必须实现 getName()");
+  }
+  getThemeColors() {
+    throw new Error("必须实现 getThemeColors()");
+  }
+  findTextarea() {
+    /* 通用查找逻辑 */
+  }
+  insertPrompt(content) {
+    throw new Error("必须实现 insertPrompt()");
+  }
+}
+
+/**
+ * 示例：Gemini 适配器
+ */
+class GeminiAdapter extends SiteAdapter {
+  match() {
+    return window.location.hostname.includes("gemini.google");
+  }
+  getName() {
+    return "Gemini";
+  }
+  insertPrompt(content) {
+    // Gemini 特定的 DOM 操作逻辑
+  }
+}
+```
+
+现在，如果想为脚本添加一个新的 AI 网站支持，只需继承 `SiteAdapter` 并注册即可，无需修改核心业务逻辑。
+
+---
+
+## 版本 1.4.5 (2025-12-09) - [bd3df12](https://github.com/urzeye/tampermonkey-scripts/commit/bd3df12)
 
 ### 修复问题：页面加载后首次插入提示词时，多行文本只能插入首行
 
@@ -12,16 +68,16 @@
 
 ```javascript
 // 先全选
-document.execCommand('selectAll', false, null);
+document.execCommand("selectAll", false, null);
 // 【关键 Trick】插入一个空格来“替换”旧内容
 // 直接 delete 会破坏 DOM 结构导致多行失效
 // 用 insertText 插入空格，既清空了旧文，又保留了段落标签 <p>
-document.execCommand('insertText', false, ' ');
+document.execCommand("insertText", false, " ");
 // 再次全选（为了选中刚才那个空格，准备覆盖它）
 // 如果不加这步，提示词前面会多一个空格
-document.execCommand('selectAll', false, null);
+document.execCommand("selectAll", false, null);
 // 然后插入新内容
-const success = document.execCommand('insertText', false, promptContent);
+const success = document.execCommand("insertText", false, promptContent);
 ```
 
 ## 版本 1.4.4 (2025-12-08) - [75dd3e5](https://github.com/urzeye/tampermonkey-scripts/commit/75dd3e5)
