@@ -4,7 +4,7 @@
 
 ## 📦 脚本列表
 
-### <img src="https://raw.githubusercontent.com/gist/urzeye/8d1d3afbbcd0193dbc8a2019b1ba54d3/raw/f7113d329a259963ed1b1ab8cb981e8f635d4cea/gemini.svg" height="24" alt="Gemini" /> [Gemini Helper](./docs/README-gemini-helper.md)
+### <img src="https://raw.githubusercontent.com/gist/urzeye/8d1d3afbbcd0193dbc8a2019b1ba54d3/raw/f7113d329a259963ed1b1ab8cb981e8f635d4cea/gemini.svg" height="24" alt="Gemini" /> [Gemini Helper](./gemini-helper/README.md)
 
 > 为 Gemini 和 Gemini Enterprise 打造的提示词管理器
 
