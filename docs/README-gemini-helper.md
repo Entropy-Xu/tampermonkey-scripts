@@ -30,6 +30,10 @@
 - 渐变色主题，美观大方
 - 悬浮条显示当前提示词，支持一键清除
 
+![功能主图](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/images/gemini-helper/gemini-helper-1.png "功能主图")
+![分类管理](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/images/gemini-helper/gemini-helper-2.png "分类管理")
+![折叠状态](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/images/gemini-helper/gemini-helper-3.png "折叠状态")
+
 ## 🔧 使用方法
 
 1. 安装 Tampermonkey 浏览器扩展
@@ -51,7 +55,15 @@
 | Enter 发送  | 自动隐藏悬浮条    |
 | ⬆ / ⬇ 按钮  | 跳转页面顶部/底部 |
 
-## 📋 更新日志
+## 📋 [更新日志](../changelogs/CHANGELOG-gemini-helper.md)
+
+### v1.4.5
+
+- 修复页面加载后首次插入提示词时，多行文本只能插入首行
+
+### v1.4.4
+
+- 修复切换提示词时内容叠加
 
 ### v1.4.3
 
