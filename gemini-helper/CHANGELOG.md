@@ -1,5 +1,141 @@
 # Gemini 提示词管理器 - 变更日志
 
+## 版本 1.5.5 (2025-12-10) - []()
+
+### 修复问题：Gemini Business 提示词发送后，悬浮条不隐藏问题
+
+#### 问题描述
+
+- 在 Gemini Business（使用 Shadow DOM + ProseMirror）场景下，脚本原先通过 `e.target.closest(...)` 或简单的 `document` 查询来识别“发送”动作与编辑器节点；但在 Shadow DOM 或事件代理路径中，`e.target` 可能是 Shadow host 或其他容器，导致未正确识别发送事件或未更新 `siteAdapter.textarea`，从而无法在发送后隐藏“当前提示词”悬浮条。
+- 此外，早期通过 `document.execCommand('delete')` / `insertText` 等命令清空编辑器的方式在 ProseMirror 中有兼容性问题，会破坏编辑器内部段落结构，造成光标跳转或插入的空格/换行丢失。
+
+#### 修复思路
+
+- 使用事件的 `composedPath()`（或兼容 `path`）来遍历事件传播链，优先在传播路径中找到真实的编辑器节点或发送按钮（支持 Shadow DOM）。
+- 在判断 Enter/发送来源时，先做严格的 DOM 特征检测（`contenteditable="true"`、`role=textbox`、`.ProseMirror`、`TEXTAREA`），再降级到适配器的 `isValidTextarea()`，最后才用通用的 `.matches(...)` 兜底。这样尽量减少误判（例如把提示面板误当输入框）。
+- 针对 ProseMirror（Gemini Business）的清空操作，改为保留段落结构的方式：确保存在 `<p>` 节点、写入零宽空格 `\u200B`、派发 `InputEvent` 并用 Selection 定位光标，同时加入短延迟重试以应对站点脚本的并发修改。
+
+#### 关键代码（节选）
+
+- 1. 在事件中通过 `composedPath` 找到发送按钮（`UniversalPromptManager.findElementByComposedPath`）
+
+```javascript
+function findElementByComposedPath(e) {
+  const path =
+    (e && typeof e.composedPath === "function" && e.composedPath()) ||
+    e.path ||
+    [];
+  const selectors = this.siteAdapter.getSubmitButtonSelectors() || [];
+  const combined = selectors.join(",");
+  for (const node of path) {
+    if (!node || !(node instanceof Element)) continue;
+    try {
+      if (combined && node.matches && node.matches(combined)) return node;
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  return null;
+}
+```
+
+- 2. Enter 键路径遍历与严格判定（在 `UniversalPromptManager` 的按键处理处）
+
+```javascript
+const path = (e && e.composedPath && e.composedPath()) || e.path || [e.target];
+let foundEditor = null;
+for (const node of path) {
+  if (!node || !(node instanceof Element)) continue;
+
+  // 严格判定：显式可编辑特征优先
+  const isStrictEditable =
+    (typeof node.getAttribute === "function" &&
+      node.getAttribute("contenteditable") === "true") ||
+    (typeof node.getAttribute === "function" &&
+      node.getAttribute("role") === "textbox") ||
+    (node.classList &&
+      node.classList.contains &&
+      node.classList.contains("ProseMirror")) ||
+    node.tagName === "TEXTAREA";
+  if (isStrictEditable) {
+    foundEditor = node;
+    break;
+  }
+
+  // 次级判定：让适配器判断（适配器可能有站点特殊逻辑）
+  try {
+    if (this.siteAdapter.isValidTextarea(node)) {
+      foundEditor = node;
+      break;
+    }
+  } catch (err) {}
+
+  // 最后兜底：常见可编辑选择器
+  try {
+    if (
+      node.matches &&
+      node.matches('[contenteditable="true"], .ProseMirror, textarea')
+    ) {
+      foundEditor = node;
+      break;
+    }
+  } catch (err) {}
+}
+if (foundEditor) {
+  this.siteAdapter.textarea = foundEditor;
+  // 延迟隐藏，避免与页面脚本竞争
+  setTimeout(() => this.clearSelectedPrompt(), 100);
+}
+```
+
+- 3. 针对 Gemini Business（ProseMirror）的清空逻辑（`GeminiBusinessAdapter.clearTextarea` 的核心）
+
+```javascript
+const tryClear = () => {
+  const ta = this.textarea;
+  if (!ta) return;
+
+  // 普通 textarea/input
+  if (ta.tagName === "TEXTAREA" || ta.tagName === "INPUT") {
+    ta.value = "";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+
+  // contenteditable / ProseMirror 场景：保留段落结构
+  let p = ta.querySelector("p");
+  if (!p) {
+    p = document.createElement("p");
+    ta.appendChild(p);
+  }
+  // 写入零宽空格以避免破坏段落结构
+  p.textContent = "\u200B";
+  ta.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+  // 把光标放到 p 的末尾
+  const range = document.createRange();
+  range.selectNodeContents(p);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  // 若清空失败（站点脚本可能在并发修改），250ms 后重试一次
+  setTimeout(() => {
+    if (ta.textContent && ta.textContent.trim() !== "") tryClear();
+  }, 250);
+};
+tryClear();
+```
+
+#### 其它改动（兼容与稳健性）
+
+- 统一 `getSubmitButtonSelectors()` 返回类型为数组，避免在组合选择器时出现异常。
+- 在发送按钮点击与 Enter 事件中都显式调用 `this.siteAdapter.clearTextarea()`（带短延迟），确保在发送后及时清空输入并隐藏悬浮条。
+- 为关键判断加入 try/catch，防止第三方站点脚本抛错影响脚本整体运行。
+
+以上更改已在本地 `gemini-helper.user.js` 中实现并在多种场景下进行兼容调整，推荐在目标站点（Gemini 普通版 / Gemini Business / Genspark）上进行实机测试以验证没有回归。
+
 ## 版本 1.5.4 (2025-12-09) - [944f03f](https://github.com/urzeye/tampermonkey-scripts/commit/944f03f)
 
 ### 修复问题：Gemini Business 中文输入首字母自动转换为英文

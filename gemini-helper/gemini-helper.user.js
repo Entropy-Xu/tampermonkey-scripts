@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.5.4
+// @version      1.5.5
 // @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
 // @author       urzeye
 // @note         参考 https://linux.do/t/topic/925110 的代码与UI布局拓展实现
@@ -80,6 +80,15 @@
 		 * @returns {string[]}
 		 */
 		getTextareaSelectors() { return []; }
+
+		/**
+		 * 获取提交按钮选择器，可以匹配ID、类名、属性等选择器
+		 * 
+		 * @returns 提交按钮选择器
+		 */
+		getSubmitButtonSelectors() {
+			return [];
+		}
 
 		/**
 		 * 查找输入框元素
@@ -220,6 +229,15 @@
 			];
 		}
 
+		getSubmitButtonSelectors() {
+			return [
+				'button[aria-label*="Send"]',
+				'button[aria-label*="发送"]',
+				'.send-button',
+				'[data-testid*="send"]'
+			];
+		}
+
 		isValidTextarea(element) {
 			// 必须是可见的 contenteditable 元素
 			if (element.offsetParent === null) return false;
@@ -239,16 +257,6 @@
 			try {
 				// 先全选
 				document.execCommand('selectAll', false, null);
-
-				// 【关键 Trick】插入一个空格来“替换”旧内容
-				// 直接 delete 会破坏 DOM 结构导致多行失效
-				// 用 insertText 插入空格，既清空了旧文，又保留了段落标签 <p>
-				document.execCommand('insertText', false, ' ');
-
-				// 再次全选（为了选中刚才那个空格，准备覆盖它）
-				// 如果不加这步，提示词前面会多一个空格
-				document.execCommand('selectAll', false, null);
-
 				// 然后插入新内容
 				const success = document.execCommand('insertText', false, content);
 				if (!success) {
@@ -270,6 +278,7 @@
 				document.execCommand('delete', false, null);
 			}
 		}
+
 	}
 
 	/**
@@ -296,6 +305,15 @@
 			];
 		}
 
+		getSubmitButtonSelectors() {
+			return [
+				'button[aria-label*="Submit"]',
+				'button[aria-label*="提交"]',
+				'.send-button',
+				'[data-testid*="send"]'
+			];
+		}
+
 		isValidTextarea(element) {
 			// 排除搜索框
 			if (element.type === 'search') return false;
@@ -311,7 +329,6 @@
 			const isVisible = element.offsetParent !== null;
 			const isContentEditable = element.getAttribute('contenteditable') === 'true';
 			const isProseMirror = element.classList.contains('ProseMirror');
-
 			return isVisible && (isContentEditable || isProseMirror || element.tagName === 'TEXTAREA');
 		}
 
@@ -376,10 +393,6 @@
 						try {
 							// 先全选
 							document.execCommand('selectAll', false, null);
-							// 插入空格替换旧内容
-							document.execCommand('insertText', false, ' ');
-							// 再次全选
-							document.execCommand('selectAll', false, null);
 							// 插入新内容
 							const success = document.execCommand('insertText', false, content);
 							if (!success) throw new Error('execCommand returned false');
@@ -435,19 +448,14 @@
 			if (this.textarea) {
 				this.textarea.focus();
 				document.execCommand('selectAll', false, null);
-				document.execCommand('delete', false, null);
+				// 插入空格替换旧内容
+				document.execCommand('insertText', false, '\u200B');
 			}
 		}
 
 		afterPropertiesSet() {
 			// fixed: gemini business 在使用中文输入时，首字母会自动转换为英文，多一个字母
-			if (this.textarea) {
-				this.textarea.focus();
-				// 先全选
-				document.execCommand('selectAll', false, null);
-				// 插入空格替换旧内容
-				document.execCommand('insertText', false, ' ');
-			}
+			this.clearTextarea();
 		}
 	}
 
@@ -471,6 +479,15 @@
 				'textarea.search-input',
 				'.textarea-wrapper textarea',
 				'textarea[placeholder*="Message"]'
+			];
+		}
+
+		getSubmitButtonSelectors() {
+			return [
+				'button[aria-label*="Send"]',
+				'button[aria-label*="发送"]',
+				'.send-button',
+				'[data-testid*="send"]'
 			];
 		}
 
@@ -1271,6 +1288,28 @@
 			}, 2000);
 		}
 
+
+		findElementByComposedPath(e) {
+			if (!e) return null;
+			// 获取事件的完整传播路径（兼容没有 composedPath 的浏览器）
+			const path = typeof e.composedPath === 'function' ? e.composedPath() : (e.path || []);
+
+			// 获取提交按钮选择器数组并合并成 selector 字符串
+			const selectors = (this.siteAdapter && typeof this.siteAdapter.getSubmitButtonSelectors === 'function')
+				? this.siteAdapter.getSubmitButtonSelectors()
+				: [];
+			const combinedSelector = selectors.length ? selectors.join(', ') : '';
+
+			if (!combinedSelector) return null;
+
+			// 查找路径中第一个符合条件的元素
+			const foundElement = path.find(element =>
+				element && element instanceof Element && typeof element.matches === 'function' && element.matches(combinedSelector)
+			);
+
+			return foundElement || null;
+		}
+
 		bindEvents() {
 			const searchInput = document.getElementById('prompt-search');
 			if (searchInput) searchInput.addEventListener('input', (e) => this.refreshPromptList(e.target.value));
@@ -1341,19 +1380,79 @@
 					}
 				}
 
-				// 监听发送按钮点击，自动隐藏悬浮条
-				if (this.selectedPrompt && e.target.closest('button[aria-label*="Send"], button[aria-label*="发送"], .send-button, [data-testid*="send"]')) {
-					setTimeout(() => this.clearSelectedPrompt(), 100);
+				// 监听发送按钮点击，自动隐藏悬浮条（使用 composedPath 在 Shadow DOM 中查找）
+				if (this.selectedPrompt) {
+					const found = this.findElementByComposedPath(e);
+					let matched = !!found;
+					// 如果 composedPath 没命中，尝试使用 closest 回退（兼容 Shadow DOM 之外的情况）
+					if (!matched && e && e.target && typeof e.target.closest === 'function') {
+						const selectors = (this.siteAdapter && typeof this.siteAdapter.getSubmitButtonSelectors === 'function')
+							? this.siteAdapter.getSubmitButtonSelectors()
+							: [];
+						const combined = selectors.length ? selectors.join(', ') : '';
+						if (combined) {
+							try {
+								matched = !!e.target.closest(combined);
+							} catch (err) {
+								matched = false;
+							}
+						}
+					}
+					if (matched) setTimeout(() => this.clearSelectedPrompt(), 100);
 				}
 			});
 
-			// 监听 Enter 键发送（Ctrl+Enter 或直接 Enter）
+			// 监听 Enter 键发送（Ctrl+Enter 或直接 Enter），兼容 Shadow DOM：从事件传播路径查找真实输入元素
 			document.addEventListener('keydown', (e) => {
-				if (this.selectedPrompt && e.key === 'Enter' && !e.shiftKey) {
-					// 检查是否在输入框内
-					if (this.siteAdapter.isValidTextarea(e.target) || e.target.closest('[contenteditable="true"]')) {
-						setTimeout(() => this.clearSelectedPrompt(), 100);
+				if (!(this.selectedPrompt && e.key === 'Enter' && !e.shiftKey)) return;
+
+				// 获取事件传播路径，兼容 composedPath 或 e.path
+				const path = typeof e.composedPath === 'function' ? e.composedPath() : (e.path || [e.target]);
+				let foundEditor = null;
+				for (const node of path) {
+					if (!node || !(node instanceof Element)) continue;
+
+					// 严格判定：先检查显式的可编辑特征（contenteditable / role=textbox / ProseMirror / TEXTAREA）
+					try {
+						const isStrictEditable = (
+							(typeof node.getAttribute === 'function' && node.getAttribute('contenteditable') === 'true') ||
+							(typeof node.getAttribute === 'function' && node.getAttribute('role') === 'textbox') ||
+							(node.classList && node.classList.contains && node.classList.contains('ProseMirror')) ||
+							(node.tagName === 'TEXTAREA')
+						);
+						if (isStrictEditable) {
+							foundEditor = node;
+							break;
+						}
+					} catch (err) {
+						// 忽略检测错误，继续后续判定
 					}
+
+					// 次级判定：调用适配器的 isValidTextarea（适配器可能有更严格或特殊逻辑）
+					try {
+						if (this.siteAdapter.isValidTextarea(node)) {
+							foundEditor = node;
+							break;
+						}
+					} catch (err) {
+						// 忽略 isValidTextarea 抛出的意外错误
+					}
+
+					// 最后的兜底：检查常见选择器匹配
+					try {
+						if (node.matches && node.matches('[contenteditable="true"], .ProseMirror, textarea')) {
+							foundEditor = node;
+							break;
+						}
+					} catch (err) {
+						// 忽略 matches 抛出的错误
+					}
+				}
+
+				if (foundEditor) {
+					// 更新适配器的 textarea 引用，防止后续操作找不到元素
+					try { this.siteAdapter.textarea = foundEditor; } catch (err) { /* 忽略 */ }
+					setTimeout(() => this.clearSelectedPrompt(), 100);
 				}
 			});
 		}
