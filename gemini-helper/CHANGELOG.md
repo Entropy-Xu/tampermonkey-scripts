@@ -1,6 +1,6 @@
 # Gemini 助手 - 变更日志
 
-## 版本 1.6.0 (2025-12-10)
+## 版本 1.6.0 (2025-12-10) - [6ac436d](https://github.com/urzeye/tampermonkey-scripts/commit/6ac436d)
 
 ### 新功能：Tab 切换架构与设置面板
 
