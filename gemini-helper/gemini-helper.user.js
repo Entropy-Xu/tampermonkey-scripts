@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.5.5
-// @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部
+// @version      1.6.0
+// @description  为 Gemini、Gemini Enterprise 增加提示词管理功能，支持增删改查和快速插入；支持快速到页面顶部、底部；多语言支持（简中/繁中/英语）
 // @author       urzeye
 // @note         参考 https://linux.do/t/topic/925110 的代码与UI布局拓展实现
 // @match        https://gemini.google.com/*
@@ -25,12 +25,203 @@
 	'use strict';
 
 	// 防止重复初始化
-	if (window.promptManagerInitialized) {
+	if (window.geminiHelperInitialized) {
 		return;
 	}
-	window.promptManagerInitialized = true;
+	window.geminiHelperInitialized = true;
 
-	// 默认提示词库
+
+	// ==================== 设置项与多语言 ====================
+
+	const SETTING_KEYS = {
+		CLEAR_TEXTAREA_ON_SEND: 'gemini_business_clear_on_send',
+		LANGUAGE: 'ui_language'
+	};
+
+	const I18N = {
+		'zh-CN': {
+			panelTitle: 'Gemini 助手',
+			tabPrompts: '📝 提示词',
+			tabSettings: '⚙️ 设置',
+			searchPlaceholder: '搜索提示词...',
+			addPrompt: '添加新提示词',
+			allCategory: '全部',
+			manageCategory: '⚙ 管理',
+			currentPrompt: '当前提示词：',
+			scrollTop: '顶部',
+			scrollBottom: '底部',
+			refresh: '刷新',
+			collapse: '收起',
+			edit: '编辑',
+			delete: '删除',
+			copy: '复制',
+			drag: '拖动',
+			save: '保存',
+			cancel: '取消',
+			add: '添加',
+			title: '标题',
+			category: '分类',
+			categoryPlaceholder: '例如：编程、翻译',
+			content: '提示词内容',
+			editPrompt: '编辑提示词',
+			addNewPrompt: '添加新提示词',
+			fillTitleContent: '请填写标题和内容',
+			promptUpdated: '提示词已更新',
+			promptAdded: '提示词已添加',
+			deleted: '已删除',
+			copied: '已复制到剪贴板',
+			cleared: '已清除内容',
+			refreshed: '已刷新',
+			orderUpdated: '已更新排序',
+			inserted: '已插入提示词',
+			scrolling: '页面正在滚动，请稍后...',
+			noTextarea: '未找到输入框，请点击输入框后重试',
+			confirmDelete: '确定删除?',
+			// 设置面板
+			settingsTitle: '设置',
+			clearOnSendLabel: '发送后自动修复中文输入',
+			clearOnSendDesc: '发送消息后插入零宽字符，修复下次输入首字母问题（仅 Gemini Business）',
+			settingOn: '开',
+			settingOff: '关',
+			// 分类管理
+			categoryManage: '分类管理',
+			categoryEmpty: '暂无分类，添加提示词时会自动创建分类',
+			rename: '重命名',
+			newCategoryName: '请输入新的分类名称：',
+			categoryRenamed: '分类已重命名',
+			confirmDeleteCategory: '确定删除该分类吗？关联的提示词将移至"未分类"',
+			categoryDeleted: '分类已删除',
+			// 语言设置
+			languageLabel: '界面语言',
+			languageDesc: '设置面板显示语言，重新打开页面生效',
+			languageAuto: '跟随系统',
+			languageZhCN: '简体中文',
+			languageZhTW: '繁體中文',
+			languageEn: 'English'
+		},
+		'zh-TW': {
+			panelTitle: 'Gemini 助手',
+			tabPrompts: '📝 提示詞',
+			tabSettings: '⚙️ 設置',
+			searchPlaceholder: '搜尋提示詞...',
+			addPrompt: '新增提示詞',
+			allCategory: '全部',
+			manageCategory: '⚙ 管理',
+			currentPrompt: '當前提示詞：',
+			scrollTop: '頂部',
+			scrollBottom: '底部',
+			refresh: '刷新',
+			collapse: '收起',
+			edit: '編輯',
+			delete: '刪除',
+			copy: '複製',
+			drag: '拖動',
+			save: '保存',
+			cancel: '取消',
+			add: '新增',
+			title: '標題',
+			category: '分類',
+			categoryPlaceholder: '例如：程式設計、翻譯',
+			content: '提示詞內容',
+			editPrompt: '編輯提示詞',
+			addNewPrompt: '新增提示詞',
+			fillTitleContent: '請填寫標題和內容',
+			promptUpdated: '提示詞已更新',
+			promptAdded: '提示詞已新增',
+			deleted: '已刪除',
+			copied: '已複製到剪貼簿',
+			cleared: '已清除內容',
+			refreshed: '已刷新',
+			orderUpdated: '已更新排序',
+			inserted: '已插入提示詞',
+			scrolling: '頁面正在捲動，請稍後...',
+			noTextarea: '未找到輸入框，請點擊輸入框後重試',
+			confirmDelete: '確定刪除?',
+			// 設置面板
+			settingsTitle: '設置',
+			clearOnSendLabel: '發送後自動修復中文輸入',
+			clearOnSendDesc: '發送訊息後插入零寬字元，修復下次輸入首字母問題（僅 Gemini Business）',
+			settingOn: '開',
+			settingOff: '關',
+			// 分類管理
+			categoryManage: '分類管理',
+			categoryEmpty: '暫無分類，新增提示詞時會自動建立分類',
+			rename: '重新命名',
+			newCategoryName: '請輸入新的分類名稱：',
+			categoryRenamed: '分類已重新命名',
+			confirmDeleteCategory: '確定刪除該分類嗎？關聯的提示詞將移至「未分類」',
+			categoryDeleted: '分類已刪除',
+			// 語言設置
+			languageLabel: '介面語言',
+			languageDesc: '設定面板顯示語言，重新開啟頁面生效',
+			languageAuto: '跟隨系統',
+			languageZhCN: '简体中文',
+			languageZhTW: '繁體中文',
+			languageEn: 'English'
+		},
+		'en': {
+			panelTitle: 'Gemini Helper',
+			tabPrompts: '📝 Prompts',
+			tabSettings: '⚙️ Settings',
+			searchPlaceholder: 'Search prompts...',
+			addPrompt: 'Add New Prompt',
+			allCategory: 'All',
+			manageCategory: '⚙ Manage',
+			currentPrompt: 'Current: ',
+			scrollTop: 'Top',
+			scrollBottom: 'Bottom',
+			refresh: 'Refresh',
+			collapse: 'Collapse',
+			edit: 'Edit',
+			delete: 'Delete',
+			copy: 'Copy',
+			drag: 'Drag',
+			save: 'Save',
+			cancel: 'Cancel',
+			add: 'Add',
+			title: 'Title',
+			category: 'Category',
+			categoryPlaceholder: 'e.g., Coding, Translation',
+			content: 'Prompt Content',
+			editPrompt: 'Edit Prompt',
+			addNewPrompt: 'Add New Prompt',
+			fillTitleContent: 'Please fill in title and content',
+			promptUpdated: 'Prompt updated',
+			promptAdded: 'Prompt added',
+			deleted: 'Deleted',
+			copied: 'Copied to clipboard',
+			cleared: 'Content cleared',
+			refreshed: 'Refreshed',
+			orderUpdated: 'Order updated',
+			inserted: 'Prompt inserted',
+			scrolling: 'Page is scrolling, please wait...',
+			noTextarea: 'Input not found, please click the input area first',
+			confirmDelete: 'Delete this prompt?',
+			// Settings panel
+			settingsTitle: 'Settings',
+			clearOnSendLabel: 'Auto-fix Chinese input after send',
+			clearOnSendDesc: 'Insert zero-width char after send to fix first letter issue (Gemini Business only)',
+			settingOn: 'ON',
+			settingOff: 'OFF',
+			// Category management
+			categoryManage: 'Category Management',
+			categoryEmpty: 'No categories yet. Categories are created when you add prompts.',
+			rename: 'Rename',
+			newCategoryName: 'Enter new category name:',
+			categoryRenamed: 'Category renamed',
+			confirmDeleteCategory: 'Delete this category? Associated prompts will be moved to "Uncategorized"',
+			categoryDeleted: 'Category deleted',
+			// Language settings
+			languageLabel: 'Language',
+			languageDesc: 'Set panel display language, reload page to apply',
+			languageAuto: 'Auto',
+			languageZhCN: '简体中文',
+			languageZhTW: '繁體中文',
+			languageEn: 'English'
+		}
+	};
+
+	// ============= 默认提示词库 =============
 	const DEFAULT_PROMPTS = [
 		{
 			id: 'default_1',
@@ -45,6 +236,24 @@
 			category: '翻译'
 		},
 	];
+
+	// 语言检测函数（支持手动设置）
+	function detectLanguage() {
+		// 优先使用用户手动设置的语言
+		const savedLang = GM_getValue(SETTING_KEYS.LANGUAGE, 'auto');
+		if (savedLang !== 'auto' && I18N[savedLang]) {
+			return savedLang;
+		}
+		// 自动检测
+		const lang = navigator.language || navigator.userLanguage || 'en';
+		if (lang.startsWith('zh-TW') || lang.startsWith('zh-HK') || lang.startsWith('zh-Hant')) {
+			return 'zh-TW';
+		}
+		if (lang.startsWith('zh')) {
+			return 'zh-CN';
+		}
+		return 'en';
+	}
 
 	// ==================== 站点适配器模式 (Site Adapter Pattern) ====================
 
@@ -244,7 +453,7 @@
 			const isContentEditable = element.getAttribute('contenteditable') === 'true';
 			const isTextbox = element.getAttribute('role') === 'textbox';
 			// 排除脚本自身的 UI
-			if (element.closest('#universal-prompt-panel')) return false;
+			if (element.closest('#gemini-helper-panel')) return false;
 
 			return (isContentEditable || isTextbox) || element.classList.contains('ql-editor');
 		}
@@ -323,7 +532,7 @@
 			// 排除脚本自己的 UI
 			if (element.classList.contains('prompt-search-input')) return false;
 			if (element.id === 'prompt-search') return false;
-			if (element.closest('#universal-prompt-panel')) return false;
+			if (element.closest('#gemini-helper-panel')) return false;
 
 			// 必须是 contenteditable 或者 ProseMirror
 			const isVisible = element.offsetParent !== null;
@@ -448,14 +657,26 @@
 			if (this.textarea) {
 				this.textarea.focus();
 				document.execCommand('selectAll', false, null);
-				// 插入空格替换旧内容
+				// 插入零宽空格替换旧内容（修复中文输入首字母问题）
 				document.execCommand('insertText', false, '\u200B');
 			}
 		}
 
-		afterPropertiesSet() {
+		// 普通清空（不插入零宽字符）
+		clearTextareaNormal() {
+			if (this.textarea) {
+				this.textarea.focus();
+				document.execCommand('selectAll', false, null);
+				document.execCommand('delete', false, null);
+			}
+		}
+
+		afterPropertiesSet(clearOnInit = true) {
 			// fixed: gemini business 在使用中文输入时，首字母会自动转换为英文，多一个字母
-			this.clearTextarea();
+			// 根据 clearOnInit 参数决定是否插入零宽字符
+			if (clearOnInit) {
+				this.clearTextarea();
+			}
 		}
 	}
 
@@ -575,15 +796,29 @@
 		}
 	}
 
-	// 提示词管理类
-	class UniversalPromptManager {
+	// ==================== 核心管理类 ====================
+
+	/**
+	 * Gemini 助手核心类
+	 * 管理提示词、设置和 UI 界面
+	 */
+	class GeminiHelper {
 		constructor(siteAdapter) {
 			this.prompts = this.loadPrompts();
 			this.selectedPrompt = null;
 			this.isCollapsed = false;
 			this.siteAdapter = siteAdapter;
 			this.isScrolling = false; // 滚动状态锁
+			this.currentTab = 'prompts'; // 当前激活的 Tab
+			this.lang = detectLanguage(); // 当前语言
+			this.i18n = I18N[this.lang]; // 当前语言文本
+			this.settings = this.loadSettings(); // 加载设置
 			this.init();
+		}
+
+		// 获取翻译文本
+		t(key) {
+			return this.i18n[key] || key;
 		}
 
 		loadPrompts() {
@@ -597,6 +832,18 @@
 
 		savePrompts() {
 			GM_setValue('universal_prompts', this.prompts);
+		}
+
+		// 加载设置
+		loadSettings() {
+			return {
+				clearTextareaOnSend: GM_getValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, false) // 默认关闭
+			};
+		}
+
+		// 保存设置
+		saveSettings() {
+			GM_setValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, this.settings.clearTextareaOnSend);
 		}
 
 		addPrompt(prompt) {
@@ -636,21 +883,25 @@
 			this.createUI();
 			this.bindEvents();
 			this.siteAdapter.findTextarea();
-			this.siteAdapter.afterPropertiesSet();
+			// 对于 Gemini Business，根据设置决定是否在初始化时插入零宽字符
+			const shouldClearOnInit = this.siteAdapter instanceof GeminiBusinessAdapter
+				? this.settings.clearTextareaOnSend
+				: false;
+			this.siteAdapter.afterPropertiesSet(shouldClearOnInit);
 		}
 
 		createStyles() {
-			const existingStyle = document.getElementById('universal-prompt-manager-styles');
+			const existingStyle = document.getElementById('gemini-helper-styles');
 			if (existingStyle) existingStyle.remove();
 
 			const colors = this.siteAdapter.getThemeColors();
 			const gradient = `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)`;
 
 			const style = document.createElement('style');
-			style.id = 'universal-prompt-manager-styles';
+			style.id = 'gemini-helper-styles';
 			style.textContent = `
                 /* 主面板样式 */
-                #universal-prompt-panel {
+                #gemini-helper-panel {
                     position: fixed;
                     top: 50%;
                     right: 20px;
@@ -667,7 +918,7 @@
                     transition: all 0.3s ease;
                     border: 1px solid #e0e0e0;
                 }
-                #universal-prompt-panel.collapsed { display: none; }
+                #gemini-helper-panel.collapsed { display: none; }
                 .prompt-panel-header {
                     padding: 16px;
                     background: ${gradient};
@@ -833,12 +1084,64 @@
                 .category-action-btn.delete { background: #fee2e2; color: #dc2626; }
                 .category-action-btn.delete:hover { background: #fecaca; }
                 .category-empty { text-align: center; color: #9ca3af; padding: 40px 0; font-size: 14px; }
+                /* Tab 切换栏 */
+                .prompt-panel-tabs {
+                    display: flex; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+                }
+                .prompt-panel-tab {
+                    flex: 1; padding: 10px 16px; background: transparent; border: none;
+                    font-size: 13px; font-weight: 500; color: #6b7280; cursor: pointer;
+                    transition: all 0.2s; border-bottom: 2px solid transparent;
+                }
+                .prompt-panel-tab:hover { color: #374151; background: #f3f4f6; }
+                .prompt-panel-tab.active {
+                    color: ${colors.primary}; border-bottom-color: ${colors.primary}; background: white;
+                }
+                /* 面板内容区 */
+                .prompt-panel-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+                .prompt-panel-content.hidden { display: none; }
+                /* 设置面板 */
+                .settings-content { padding: 16px; overflow-y: auto; flex: 1; }
+                .settings-section { margin-bottom: 20px; }
+                .settings-section-title {
+                    font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 12px;
+                    padding-bottom: 8px; border-bottom: 1px solid #e5e7eb;
+                }
+                .setting-item {
+                    display: flex; align-items: flex-start; justify-content: space-between;
+                    padding: 12px; background: #f9fafb; border-radius: 8px; margin-bottom: 8px;
+                }
+                .setting-item-info { flex: 1; margin-right: 12px; }
+                .setting-item-label { font-size: 14px; font-weight: 500; color: #1f2937; margin-bottom: 4px; }
+                .setting-item-desc { font-size: 12px; color: #6b7280; line-height: 1.4; }
+                /* 开关组件 */
+                .setting-toggle {
+                    position: relative; width: 44px; height: 24px; background: #d1d5db;
+                    border-radius: 12px; cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+                }
+                .setting-toggle.active { background: ${colors.primary}; }
+                .setting-toggle::after {
+                    content: ''; position: absolute; top: 2px; left: 2px;
+                    width: 20px; height: 20px; background: white; border-radius: 50%;
+                    transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                }
+                .setting-toggle.active::after { left: 22px; }
+                /* 下拉选择框 */
+                .setting-select {
+                    padding: 6px 10px; font-size: 13px; border: 1px solid #d1d5db;
+                    border-radius: 6px; background: white; color: #374151;
+                    cursor: pointer; min-width: 100px; flex-shrink: 0;
+                }
+                .setting-select:focus { outline: none; border-color: ${colors.primary}; }
+                .settings-empty {
+                    text-align: center; color: #9ca3af; padding: 40px 20px; font-size: 14px;
+                }
             `;
 			document.head.appendChild(style);
 		}
 
 		createUI() {
-			const existingPanel = document.getElementById('universal-prompt-panel');
+			const existingPanel = document.getElementById('gemini-helper-panel');
 			const existingBar = document.querySelector('.selected-prompt-bar');
 			const existingBtn = document.querySelector('.quick-prompt-btn');
 
@@ -846,24 +1149,38 @@
 			if (existingBar) existingBar.remove();
 			if (existingBtn) existingBtn.remove();
 
-			const panel = createElementSafely('div', { id: 'universal-prompt-panel' });
+			const panel = createElementSafely('div', { id: 'gemini-helper-panel' });
+
+			// Header
 			const header = createElementSafely('div', { className: 'prompt-panel-header' });
 			const title = createElementSafely('div', { className: 'prompt-panel-title' });
-			title.appendChild(createElementSafely('span', {}, '📝'));
-			title.appendChild(createElementSafely('span', {}, '提示词管理'));
+			title.appendChild(createElementSafely('span', {}, '✨'));
+			title.appendChild(createElementSafely('span', {}, this.t('panelTitle')));
 			title.appendChild(createElementSafely('span', { className: 'site-indicator' }, this.siteAdapter.getName()));
 
 			const controls = createElementSafely('div', { className: 'prompt-panel-controls' });
-			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: '刷新' }, '⟳');
-			const toggleBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: '收起' }, '−');
+			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: this.t('refresh') }, '⟳');
+			const toggleBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: this.t('collapse') }, '−');
 			controls.appendChild(refreshBtn);
 			controls.appendChild(toggleBtn);
 
 			header.appendChild(title);
 			header.appendChild(controls);
 
+			// Tab 栏
+			const tabs = createElementSafely('div', { className: 'prompt-panel-tabs' });
+			const promptsTab = createElementSafely('button', { className: 'prompt-panel-tab active', 'data-tab': 'prompts' }, this.t('tabPrompts'));
+			const settingsTab = createElementSafely('button', { className: 'prompt-panel-tab', 'data-tab': 'settings' }, this.t('tabSettings'));
+			promptsTab.addEventListener('click', () => this.switchTab('prompts'));
+			settingsTab.addEventListener('click', () => this.switchTab('settings'));
+			tabs.appendChild(promptsTab);
+			tabs.appendChild(settingsTab);
+
+			// 提示词面板内容区
+			const promptsContent = createElementSafely('div', { className: 'prompt-panel-content', id: 'prompts-content' });
+
 			const searchBar = createElementSafely('div', { className: 'prompt-search-bar' });
-			const searchInput = createElementSafely('input', { className: 'prompt-search-input', id: 'prompt-search', type: 'text', placeholder: '搜索提示词...' });
+			const searchInput = createElementSafely('input', { className: 'prompt-search-input', id: 'prompt-search', type: 'text', placeholder: this.t('searchPlaceholder') });
 			searchBar.appendChild(searchInput);
 
 			const categories = createElementSafely('div', { className: 'prompt-categories', id: 'prompt-categories' });
@@ -871,18 +1188,27 @@
 
 			const addBtn = createElementSafely('button', { className: 'add-prompt-btn', id: 'add-prompt' });
 			addBtn.appendChild(createElementSafely('span', {}, '+'));
-			addBtn.appendChild(createElementSafely('span', {}, '添加新提示词'));
+			addBtn.appendChild(createElementSafely('span', {}, this.t('addPrompt')));
+
+			promptsContent.appendChild(searchBar);
+			promptsContent.appendChild(categories);
+			promptsContent.appendChild(list);
+			promptsContent.appendChild(addBtn);
+
+			// 设置面板内容区
+			const settingsContent = createElementSafely('div', { className: 'prompt-panel-content hidden', id: 'settings-content' });
+			this.createSettingsContent(settingsContent);
 
 			panel.appendChild(header);
-			panel.appendChild(searchBar);
-			panel.appendChild(categories);
-			panel.appendChild(list);
-			panel.appendChild(addBtn);
+			panel.appendChild(tabs);
+			panel.appendChild(promptsContent);
+			panel.appendChild(settingsContent);
 
 			document.body.appendChild(panel);
 
+			// 选中提示词悬浮条
 			const selectedBar = createElementSafely('div', { className: 'selected-prompt-bar', style: 'user-select: none;' });
-			selectedBar.appendChild(createElementSafely('span', { style: 'user-select: none;' }, '当前提示词：'));
+			selectedBar.appendChild(createElementSafely('span', { style: 'user-select: none;' }, this.t('currentPrompt')));
 			selectedBar.appendChild(createElementSafely('span', { className: 'selected-prompt-text', id: 'selected-prompt-text', style: 'user-select: none;' }));
 			const clearBtn = createElementSafely('button', { className: 'clear-prompt-btn', id: 'clear-prompt' }, '×');
 			selectedBar.appendChild(clearBtn);
@@ -890,9 +1216,9 @@
 
 			// 快捷按钮组（收起时显示）
 			const quickBtnGroup = createElementSafely('div', { className: 'quick-btn-group hidden', id: 'quick-btn-group' });
-			const quickBtn = createElementSafely('button', { className: 'quick-prompt-btn', title: '打开提示词管理器' }, '📝');
-			const quickScrollTop = createElementSafely('button', { className: 'quick-prompt-btn', title: '跳转到顶部' }, '⬆');
-			const quickScrollBottom = createElementSafely('button', { className: 'quick-prompt-btn', title: '跳转到底部' }, '⬇');
+			const quickBtn = createElementSafely('button', { className: 'quick-prompt-btn', title: this.t('panelTitle') }, '✨');
+			const quickScrollTop = createElementSafely('button', { className: 'quick-prompt-btn', title: this.t('scrollTop') }, '⬆');
+			const quickScrollBottom = createElementSafely('button', { className: 'quick-prompt-btn', title: this.t('scrollBottom') }, '⬇');
 			quickBtn.addEventListener('click', () => { this.togglePanel(); });
 			quickScrollTop.addEventListener('click', () => this.scrollToTop());
 			quickScrollBottom.addEventListener('click', () => this.scrollToBottom());
@@ -903,12 +1229,12 @@
 
 			// 快捷跳转按钮组 - 放在面板底部
 			const scrollNavContainer = createElementSafely('div', { className: 'scroll-nav-container', id: 'scroll-nav-container' });
-			const scrollTopBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-top-btn', title: '跳转到顶部' });
+			const scrollTopBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-top-btn', title: this.t('scrollTop') });
 			scrollTopBtn.appendChild(createElementSafely('span', {}, '⬆'));
-			scrollTopBtn.appendChild(createElementSafely('span', {}, '顶部'));
-			const scrollBottomBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-bottom-btn', title: '跳转到底部' });
+			scrollTopBtn.appendChild(createElementSafely('span', {}, this.t('scrollTop')));
+			const scrollBottomBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-bottom-btn', title: this.t('scrollBottom') });
 			scrollBottomBtn.appendChild(createElementSafely('span', {}, '⬇'));
-			scrollBottomBtn.appendChild(createElementSafely('span', {}, '底部'));
+			scrollBottomBtn.appendChild(createElementSafely('span', {}, this.t('scrollBottom')));
 			scrollTopBtn.addEventListener('click', () => this.scrollToTop());
 			scrollBottomBtn.addEventListener('click', () => this.scrollToBottom());
 			scrollNavContainer.appendChild(scrollTopBtn);
@@ -919,8 +1245,92 @@
 			this.refreshPromptList();
 		}
 
+		// Tab 切换
+		switchTab(tabName) {
+			this.currentTab = tabName;
+
+			// 更新 Tab 激活状态
+			document.querySelectorAll('.prompt-panel-tab').forEach(tab => {
+				tab.classList.toggle('active', tab.dataset.tab === tabName);
+			});
+
+			// 切换内容区
+			document.getElementById('prompts-content')?.classList.toggle('hidden', tabName !== 'prompts');
+			document.getElementById('settings-content')?.classList.toggle('hidden', tabName !== 'settings');
+		}
+
+		// 创建设置面板内容
+		createSettingsContent(container) {
+			const content = createElementSafely('div', { className: 'settings-content' });
+
+			// 通用设置区：语言选择
+			const generalSection = createElementSafely('div', { className: 'settings-section' });
+			generalSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('settingsTitle')));
+
+			// 语言选择项
+			const langItem = createElementSafely('div', { className: 'setting-item' });
+			const langInfo = createElementSafely('div', { className: 'setting-item-info' });
+			langInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('languageLabel')));
+			langInfo.appendChild(createElementSafely('div', { className: 'setting-item-desc' }, this.t('languageDesc')));
+
+			const langSelect = createElementSafely('select', { className: 'setting-select', id: 'select-language' });
+			const currentLang = GM_getValue(SETTING_KEYS.LANGUAGE, 'auto');
+			[
+				{ value: 'auto', label: this.t('languageAuto') },
+				{ value: 'zh-CN', label: this.t('languageZhCN') },
+				{ value: 'zh-TW', label: this.t('languageZhTW') },
+				{ value: 'en', label: this.t('languageEn') }
+			].forEach(opt => {
+				const option = createElementSafely('option', { value: opt.value }, opt.label);
+				if (opt.value === currentLang) option.selected = true;
+				langSelect.appendChild(option);
+			});
+			langSelect.addEventListener('change', () => {
+				GM_setValue(SETTING_KEYS.LANGUAGE, langSelect.value);
+				// 更新当前语言并重新渲染 UI，实现即时生效
+				this.lang = detectLanguage();
+				this.i18n = I18N[this.lang];
+				this.createStyles();
+				this.createUI();
+				this.bindEvents();
+				// 切换到设置面板
+				this.switchTab('settings');
+				this.showToast(langSelect.value === 'auto' ? this.t('languageAuto') : langSelect.options[langSelect.selectedIndex].text);
+			});
+
+			langItem.appendChild(langInfo);
+			langItem.appendChild(langSelect);
+			generalSection.appendChild(langItem);
+
+			// 只在 Gemini Business 时添加清空输入框设置
+			if (this.siteAdapter instanceof GeminiBusinessAdapter) {
+				const clearItem = createElementSafely('div', { className: 'setting-item' });
+				const clearInfo = createElementSafely('div', { className: 'setting-item-info' });
+				clearInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('clearOnSendLabel')));
+				clearInfo.appendChild(createElementSafely('div', { className: 'setting-item-desc' }, this.t('clearOnSendDesc')));
+
+				const toggle = createElementSafely('div', {
+					className: 'setting-toggle' + (this.settings.clearTextareaOnSend ? ' active' : ''),
+					id: 'toggle-clear-on-send'
+				});
+				toggle.addEventListener('click', () => {
+					this.settings.clearTextareaOnSend = !this.settings.clearTextareaOnSend;
+					toggle.classList.toggle('active', this.settings.clearTextareaOnSend);
+					this.saveSettings();
+					this.showToast(this.settings.clearTextareaOnSend ? this.t('settingOn') : this.t('settingOff'));
+				});
+
+				clearItem.appendChild(clearInfo);
+				clearItem.appendChild(toggle);
+				generalSection.appendChild(clearItem);
+			}
+
+			content.appendChild(generalSection);
+			container.appendChild(content);
+		}
+
 		togglePanel() {
-			const panel = document.getElementById('universal-prompt-panel');
+			const panel = document.getElementById('gemini-helper-panel');
 			const quickBtnGroup = document.getElementById('quick-btn-group');
 			const toggleBtn = document.getElementById('toggle-panel');
 			this.isCollapsed = !this.isCollapsed;
@@ -965,12 +1375,12 @@
 			if (!container) return;
 			const categories = this.getCategories();
 			clearElementSafely(container);
-			container.appendChild(createElementSafely('span', { className: 'category-tag active', 'data-category': 'all' }, '全部'));
+			container.appendChild(createElementSafely('span', { className: 'category-tag active', 'data-category': 'all' }, this.t('allCategory')));
 			categories.forEach(cat => {
 				container.appendChild(createElementSafely('span', { className: 'category-tag', 'data-category': cat }, cat));
 			});
 			// 添加分类管理按钮
-			const manageBtn = createElementSafely('button', { className: 'category-manage-btn', title: '管理分类' }, '⚙ 管理');
+			const manageBtn = createElementSafely('button', { className: 'category-manage-btn', title: this.t('categoryManage') }, this.t('manageCategory'));
 			manageBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.showCategoryModal();
@@ -984,13 +1394,13 @@
 			const modal = createElementSafely('div', { className: 'prompt-modal' });
 			const modalContent = createElementSafely('div', { className: 'prompt-modal-content category-modal-content' });
 
-			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, '分类管理');
+			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, this.t('categoryManage'));
 			modalContent.appendChild(modalHeader);
 
 			const categoryList = createElementSafely('div', { className: 'category-list' });
 
 			if (categories.length === 0) {
-				categoryList.appendChild(createElementSafely('div', { className: 'category-empty' }, '暂无分类，添加提示词时会自动创建分类'));
+				categoryList.appendChild(createElementSafely('div', { className: 'category-empty' }, this.t('categoryEmpty')));
 			} else {
 				categories.forEach(cat => {
 					const count = this.prompts.filter(p => p.category === cat).length;
@@ -1001,11 +1411,11 @@
 					info.appendChild(createElementSafely('span', { className: 'category-item-count' }, `${count} 个提示词`));
 
 					const actions = createElementSafely('div', { className: 'category-item-actions' });
-					const renameBtn = createElementSafely('button', { className: 'category-action-btn rename' }, '重命名');
-					const deleteBtn = createElementSafely('button', { className: 'category-action-btn delete' }, '删除');
+					const renameBtn = createElementSafely('button', { className: 'category-action-btn rename' }, this.t('rename'));
+					const deleteBtn = createElementSafely('button', { className: 'category-action-btn delete' }, this.t('delete'));
 
 					renameBtn.addEventListener('click', () => {
-						const newName = prompt('请输入新的分类名称：', cat);
+						const newName = window.prompt(this.t('newCategoryName'), cat);
 						if (newName && newName.trim() && newName !== cat) {
 							this.renameCategory(cat, newName.trim());
 							modal.remove();
@@ -1014,7 +1424,7 @@
 					});
 
 					deleteBtn.addEventListener('click', () => {
-						if (confirm(`确定要删除分类"${cat}"吗？\n该分类下的 ${count} 个提示词将被移至"未分类"。`)) {
+						if (confirm(this.t('confirmDeleteCategory'))) {
 							this.deleteCategory(cat);
 							modal.remove();
 							this.showCategoryModal();
@@ -1032,7 +1442,7 @@
 			modalContent.appendChild(categoryList);
 
 			const btnGroup = createElementSafely('div', { className: 'prompt-modal-btns' });
-			const closeBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, '关闭');
+			const closeBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, this.t('cancel'));
 			closeBtn.addEventListener('click', () => modal.remove());
 			btnGroup.appendChild(closeBtn);
 			modalContent.appendChild(btnGroup);
@@ -1170,12 +1580,12 @@
 
 			this.prompts = orderedPrompts;
 			this.savePrompts();
-			this.showToast('已更新排序');
+			this.showToast(this.t('orderUpdated'));
 		}
 
 		selectPrompt(prompt, itemElement) {
 			if (this.isScrolling) {
-				this.showToast('页面正在滚动，请稍后...');
+				this.showToast(this.t('scrolling'));
 				return;
 			}
 			this.selectedPrompt = prompt;
@@ -1191,7 +1601,7 @@
 			}
 
 			this.insertPromptToTextarea(prompt.content);
-			this.showToast(`已插入提示词: ${prompt.title}`);
+			this.showToast(`${this.t('inserted')}: ${prompt.title}`);
 		}
 
 		insertPromptToTextarea(promptContent) {
@@ -1227,27 +1637,27 @@
 			const modal = createElementSafely('div', { className: 'prompt-modal' });
 			const modalContent = createElementSafely('div', { className: 'prompt-modal-content' });
 
-			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, isEdit ? '编辑提示词' : '添加新提示词');
+			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, isEdit ? this.t('editPrompt') : this.t('addNewPrompt'));
 
 			const titleGroup = createElementSafely('div', { className: 'prompt-form-group' });
-			titleGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, '标题'));
+			titleGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, this.t('title')));
 			const titleInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? prompt.title : '' });
 			titleGroup.appendChild(titleInput);
 
 			const categoryGroup = createElementSafely('div', { className: 'prompt-form-group' });
-			categoryGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, '分类'));
-			const categoryInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? (prompt.category || '') : '', placeholder: '例如：编程、翻译' });
+			categoryGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, this.t('category')));
+			const categoryInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? (prompt.category || '') : '', placeholder: this.t('categoryPlaceholder') });
 			categoryGroup.appendChild(categoryInput);
 
 			const contentGroup = createElementSafely('div', { className: 'prompt-form-group' });
-			contentGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, '提示词内容'));
+			contentGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, this.t('content')));
 			const contentTextarea = createElementSafely('textarea', { className: 'prompt-form-textarea' });
 			contentTextarea.value = isEdit ? prompt.content : '';
 			contentGroup.appendChild(contentTextarea);
 
 			const modalActions = createElementSafely('div', { className: 'prompt-modal-actions' });
-			const cancelBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, '取消');
-			const saveBtn = createElementSafely('button', { className: 'prompt-modal-btn primary' }, isEdit ? '保存' : '添加');
+			const cancelBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, this.t('cancel'));
+			const saveBtn = createElementSafely('button', { className: 'prompt-modal-btn primary' }, isEdit ? this.t('save') : this.t('add'));
 
 			modalActions.appendChild(cancelBtn);
 			modalActions.appendChild(saveBtn);
@@ -1264,14 +1674,14 @@
 			saveBtn.addEventListener('click', () => {
 				const title = titleInput.value.trim();
 				const content = contentTextarea.value.trim();
-				if (!title || !content) { alert('请填写标题和内容'); return; }
+				if (!title || !content) { alert(this.t('fillTitleContent')); return; }
 
 				if (isEdit) {
 					this.updatePrompt(prompt.id, { title, category: categoryInput.value.trim(), content });
-					this.showToast('提示词已更新');
+					this.showToast(this.t('promptUpdated'));
 				} else {
 					this.addPrompt({ title, category: categoryInput.value.trim(), content });
-					this.showToast('提示词已添加');
+					this.showToast(this.t('promptAdded'));
 				}
 				modal.remove();
 			});
@@ -1331,15 +1741,15 @@
 					const prompt = this.prompts.find(p => p.id === e.target.dataset.id);
 					if (prompt) this.showEditModal(prompt);
 				} else if (e.target.classList.contains('delete-prompt')) {
-					if (confirm('确定删除?')) {
+					if (confirm(this.t('confirmDelete'))) {
 						this.deletePrompt(e.target.dataset.id);
-						this.showToast('已删除');
+						this.showToast(this.t('deleted'));
 					}
 				} else if (e.target.classList.contains('copy-prompt')) {
 					const prompt = this.prompts.find(p => p.id === e.target.dataset.id);
 					if (prompt) {
 						navigator.clipboard.writeText(prompt.content).then(() => {
-							this.showToast('已复制到剪贴板');
+							this.showToast(this.t('copied'));
 						}).catch(() => {
 							// 降级方案
 							const textarea = document.createElement('textarea');
@@ -1348,7 +1758,7 @@
 							textarea.select();
 							document.execCommand('copy');
 							document.body.removeChild(textarea);
-							this.showToast('已复制到剪贴板');
+							this.showToast(this.t('copied'));
 						});
 					}
 				}
@@ -1356,14 +1766,24 @@
 
 			document.getElementById('clear-prompt')?.addEventListener('click', () => {
 				this.clearSelectedPrompt();
-				this.siteAdapter.clearTextarea();
-				this.showToast('已清除内容');
+				// 针对 Gemini Business，根据设置决定是否用零宽字符清空
+				if (this.siteAdapter instanceof GeminiBusinessAdapter) {
+					if (this.settings.clearTextareaOnSend) {
+						this.siteAdapter.clearTextarea(); // 插入零宽字符
+					} else {
+						this.siteAdapter.clearTextareaNormal(); // 普通清空
+					}
+				} else {
+					// 其他适配器调用各自的 clearTextarea 方法
+					this.siteAdapter.clearTextarea();
+				}
+				this.showToast(this.t('cleared'));
 			});
 
 			document.getElementById('refresh-prompts')?.addEventListener('click', () => {
 				this.refreshPromptList();
 				this.siteAdapter.findTextarea();
-				this.showToast('已刷新');
+				this.showToast(this.t('refreshed'));
 			});
 
 			document.getElementById('toggle-panel')?.addEventListener('click', () => this.togglePanel());
@@ -1380,31 +1800,40 @@
 					}
 				}
 
-				// 监听发送按钮点击，自动隐藏悬浮条（使用 composedPath 在 Shadow DOM 中查找）
-				if (this.selectedPrompt) {
-					const found = this.findElementByComposedPath(e);
-					let matched = !!found;
-					// 如果 composedPath 没命中，尝试使用 closest 回退（兼容 Shadow DOM 之外的情况）
-					if (!matched && e && e.target && typeof e.target.closest === 'function') {
-						const selectors = (this.siteAdapter && typeof this.siteAdapter.getSubmitButtonSelectors === 'function')
-							? this.siteAdapter.getSubmitButtonSelectors()
-							: [];
-						const combined = selectors.length ? selectors.join(', ') : '';
-						if (combined) {
-							try {
-								matched = !!e.target.closest(combined);
-							} catch (err) {
-								matched = false;
-							}
+				// 检测是否点击了发送按钮
+				const found = this.findElementByComposedPath(e);
+				let matched = !!found;
+				// 如果 composedPath 没命中，尝试使用 closest 回退（兼容 Shadow DOM 之外的情况）
+				if (!matched && e && e.target && typeof e.target.closest === 'function') {
+					const selectors = (this.siteAdapter && typeof this.siteAdapter.getSubmitButtonSelectors === 'function')
+						? this.siteAdapter.getSubmitButtonSelectors()
+						: [];
+					const combined = selectors.length ? selectors.join(', ') : '';
+					if (combined) {
+						try {
+							matched = !!e.target.closest(combined);
+						} catch (err) {
+							matched = false;
 						}
 					}
-					if (matched) setTimeout(() => this.clearSelectedPrompt(), 100);
+				}
+
+				if (matched) {
+					// 如果有选中的提示词，清除悬浮条
+					if (this.selectedPrompt) {
+						setTimeout(() => { this.clearSelectedPrompt(); }, 100);
+					}
+					// 针对 Gemini Business 适配器，根据设置决定是否调用 clearTextarea 修复中文输入问题
+					if (this.siteAdapter instanceof GeminiBusinessAdapter && this.settings.clearTextareaOnSend) {
+						setTimeout(() => { this.siteAdapter.clearTextarea(); }, 200);
+					}
 				}
 			});
 
 			// 监听 Enter 键发送（Ctrl+Enter 或直接 Enter），兼容 Shadow DOM：从事件传播路径查找真实输入元素
 			document.addEventListener('keydown', (e) => {
-				if (!(this.selectedPrompt && e.key === 'Enter' && !e.shiftKey)) return;
+				// 只在按下 Enter（非 Shift+Enter）时处理
+				if (!(e.key === 'Enter' && !e.shiftKey)) return;
 
 				// 获取事件传播路径，兼容 composedPath 或 e.path
 				const path = typeof e.composedPath === 'function' ? e.composedPath() : (e.path || [e.target]);
@@ -1452,13 +1881,20 @@
 				if (foundEditor) {
 					// 更新适配器的 textarea 引用，防止后续操作找不到元素
 					try { this.siteAdapter.textarea = foundEditor; } catch (err) { /* 忽略 */ }
-					setTimeout(() => this.clearSelectedPrompt(), 100);
+					// 如果有选中的提示词，清除悬浮条
+					if (this.selectedPrompt) {
+						setTimeout(() => { this.clearSelectedPrompt(); }, 100);
+					}
+					// 针对 Gemini Business 适配器，根据设置决定是否调用 clearTextarea 修复中文输入问题
+					if (this.siteAdapter instanceof GeminiBusinessAdapter && this.settings.clearTextareaOnSend) {
+						setTimeout(() => { this.siteAdapter.clearTextarea(); }, 200);
+					}
 				}
 			});
 		}
 
 		makeDraggable() {
-			const panel = document.getElementById('universal-prompt-panel');
+			const panel = document.getElementById('gemini-helper-panel');
 			const header = panel?.querySelector('.prompt-panel-header');
 			if (!panel || !header) return;
 
@@ -1513,9 +1949,9 @@
 
 		setTimeout(() => {
 			try {
-				new UniversalPromptManager(currentAdapter);
+				new GeminiHelper(currentAdapter);
 			} catch (error) {
-				console.error('提示词管理器启动失败', error);
+				console.error('Gemini Helper 启动失败', error);
 			}
 		}, 2000);
 	}

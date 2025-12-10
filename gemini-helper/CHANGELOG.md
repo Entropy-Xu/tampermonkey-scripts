@@ -1,4 +1,65 @@
-# Gemini 提示词管理器 - 变更日志
+# Gemini 助手 - 变更日志
+
+## 版本 1.6.0 (2025-12-10)
+
+### 新功能：Tab 切换架构与设置面板
+
+#### 功能概述
+
+- **面板重命名**：从"提示词管理"改为"Gemini 助手"(✨ 图标)
+- **Tab 切换**：支持"📝 提示词"和"⚙️ 设置"两个标签页
+- **设置面板**：仅在 Gemini Business 中显示
+  - "发送后自动修复中文输入"开关（默认关闭）
+  - 使用 `GM_setValue/GM_getValue` 持久化存储
+
+#### 多语言支持
+
+根据 `navigator.language` 自动检测语言，支持：
+
+- 简体中文 (zh-CN)
+- 繁體中文 (zh-TW)
+- English (en)
+
+#### 技术实现
+
+**新增常量与配置**：
+
+```javascript
+const SETTING_KEYS = {
+    CLEAR_TEXTAREA_ON_SEND: 'gemini_business_clear_on_send',
+    LANGUAGE: 'ui_language'
+};
+
+const I18N = {
+    'zh-CN': { panelTitle: 'Gemini 助手', ... },
+    'zh-TW': { panelTitle: 'Gemini 助手', ... },
+    'en': { panelTitle: 'Gemini Helper', ... }
+};
+```
+
+**新增方法**：
+
+- `detectLanguage()` - 语言检测
+- `t(key)` - 获取翻译文本
+- `loadSettings()` / `saveSettings()` - 设置持久化
+- `switchTab(tabName)` - Tab 切换
+- `createSettingsContent(container)` - 创建设置面板
+
+**事件处理修改**：
+
+```javascript
+// 根据设置决定是否调用 clearTextarea
+if (
+  this.siteAdapter instanceof GeminiBusinessAdapter &&
+  this.settings.clearTextareaOnSend
+) {
+  setTimeout(() => {
+    this.siteAdapter.clearTextarea();
+  }, 200);
+}
+```
+
+---
 
 ## 版本 1.5.5 (2025-12-10) - [431525d](https://github.com/urzeye/tampermonkey-scripts/commit/431525d)
 
