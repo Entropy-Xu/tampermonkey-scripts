@@ -1,6 +1,6 @@
 # Gemini-helper
 
-> 为 Gemini 和 Gemini Enterprise 打造的提示词管理器，提升 AI 对话效率
+> 为 Gemini 和 Gemini Enterprise 打造的多功能助手，支持提示词管理、快捷导航、智能适配系统语言，提升 AI 对话效率
 
 ## ✨ 功能特性
 
@@ -31,8 +31,9 @@
 - 悬浮条显示当前提示词，支持一键清除
 
 ![功能主图](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-1.png)
-![分类管理](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-2.png)
+![功能设置](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-2.png)
 ![折叠状态](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-3.png)
+![分类管理](https://raw.githubusercontent.com/urzeye/tampermonkey-scripts/refs/heads/main/gemini-helper/images/gemini-helper-4.png)
 
 ## 🔧 使用方法
 
