@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.6.1
-// @description  Gemini 多功能助手：提示词管理（增删改查/分类/拖拽排序）、页面加宽、快捷导航、多语言支持，兼容 Gemini 标准版/企业版
+// @version      1.7.0
+// @description  Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
 // @author       urzeye
 // @note         参考 https://linux.do/t/topic/925110 的代码与UI布局拓展实现
 // @match        https://gemini.google.com/*
@@ -35,15 +35,27 @@
 
 	const SETTING_KEYS = {
 		CLEAR_TEXTAREA_ON_SEND: 'gemini_business_clear_on_send',
-		LANGUAGE: 'ui_language',
-		PAGE_WIDTH: 'page_width_settings'
+		LANGUAGE: 'gemini_language',
+		PAGE_WIDTH: 'gemini_page_width',
+		OUTLINE: 'gemini_outline_settings',
+		TAB_ORDER: 'gemini_tab_order',
+	};
+
+	// 默认 Tab 顺序
+	const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'settings'];
+
+	// Tab 定义（用于渲染和显示）
+	const TAB_DEFINITIONS = {
+		'prompts': { id: 'prompts', labelKey: 'tabPrompts', icon: '📝' },
+		'outline': { id: 'outline', labelKey: 'tabOutline', icon: '📑' },
+		'settings': { id: 'settings', labelKey: 'tabSettings', icon: '⚙️' }
 	};
 
 	const I18N = {
 		'zh-CN': {
 			panelTitle: 'Gemini 助手',
-			tabPrompts: '📝 提示词',
-			tabSettings: '⚙️ 设置',
+			tabPrompts: '提示词',
+			tabSettings: '设置',
 			searchPlaceholder: '搜索提示词...',
 			addPrompt: '添加新提示词',
 			allCategory: '全部',
@@ -79,7 +91,7 @@
 			noTextarea: '未找到输入框，请点击输入框后重试',
 			confirmDelete: '确定删除?',
 			// 设置面板
-			settingsTitle: '设置',
+			settingsTitle: '通用设置',
 			clearOnSendLabel: '发送后自动修复中文输入',
 			clearOnSendDesc: '发送消息后插入零宽字符，修复下次输入首字母问题（仅 Gemini Business）',
 			settingOn: '开',
@@ -106,12 +118,40 @@
 			widthValue: '宽度值',
 			widthUnit: '单位',
 			unitPx: '像素 (px)',
-			unitPercent: '百分比 (%)'
+			unitPercent: '百分比 (%)',
+			// 大纲功能
+			tabOutline: '大纲',
+			outlineEmpty: '暂无大纲内容',
+			outlineRefresh: '刷新',
+			outlineSettings: '大纲设置',
+			enableOutline: '启用大纲',
+			outlineMaxLevel: '显示标题级别',
+			outlineLevelAll: '全部 (1-6级)',
+			outlineLevel1: '仅 1 级',
+			outlineLevel2: '至 2 级',
+			outlineLevel3: '至 3 级',
+			// 刷新按钮提示
+			refreshPrompts: '刷新提示词',
+			refreshOutline: '刷新大纲',
+			refreshSettings: '刷新设置',
+			// 大纲高级工具栏
+			outlineScrollBottom: '滚动到底部',
+			outlineScrollTop: '滚动到顶部',
+			outlineExpandAll: '展开全部',
+			outlineCollapseAll: '折叠全部',
+			outlineSearch: '搜索大纲...',
+			outlineSearchResult: '个结果',
+			outlineLevelHint: '级标题',
+			// Tab 顺序设置
+			tabOrderSettings: '界面排版',
+			tabOrderDesc: '调整面板 Tab 的显示顺序',
+			moveUp: '上移',
+			moveDown: '下移'
 		},
 		'zh-TW': {
 			panelTitle: 'Gemini 助手',
-			tabPrompts: '📝 提示詞',
-			tabSettings: '⚙️ 設置',
+			tabPrompts: '提示詞',
+			tabSettings: '設置',
 			searchPlaceholder: '搜尋提示詞...',
 			addPrompt: '新增提示詞',
 			allCategory: '全部',
@@ -147,7 +187,7 @@
 			noTextarea: '未找到輸入框，請點擊輸入框後重試',
 			confirmDelete: '確定刪除?',
 			// 設置面板
-			settingsTitle: '設置',
+			settingsTitle: '通用設置',
 			clearOnSendLabel: '發送後自動修復中文輸入',
 			clearOnSendDesc: '發送訊息後插入零寬字元，修復下次輸入首字母問題（僅 Gemini Business）',
 			settingOn: '開',
@@ -174,12 +214,40 @@
 			widthValue: '寬度值',
 			widthUnit: '單位',
 			unitPx: '像素 (px)',
-			unitPercent: '百分比 (%)'
+			unitPercent: '百分比 (%)',
+			// 大綱功能
+			tabOutline: '大綱',
+			outlineEmpty: '暫無大綱內容',
+			outlineRefresh: '刷新',
+			outlineSettings: '大綱設置',
+			enableOutline: '啟用大綱',
+			outlineMaxLevel: '顯示標題級別',
+			outlineLevelAll: '全部 (1-6級)',
+			outlineLevel1: '僅 1 級',
+			outlineLevel2: '至 2 級',
+			outlineLevel3: '至 3 級',
+			// 刷新按鈕提示
+			refreshPrompts: '刷新提示詞',
+			refreshOutline: '刷新大綱',
+			refreshSettings: '刷新設置',
+			// 大綱高級工具欄
+			outlineScrollBottom: '滾動到底部',
+			outlineScrollTop: '滾動到頂部',
+			outlineExpandAll: '展開全部',
+			outlineCollapseAll: '折疊全部',
+			outlineSearch: '搜尋大綱...',
+			outlineSearchResult: '個結果',
+			outlineLevelHint: '級標題',
+			// Tab 顺序设置
+			tabOrderSettings: '介面排版',
+			tabOrderDesc: '調整面板 Tab 的顯示順序',
+			moveUp: '上移',
+			moveDown: '下移'
 		},
 		'en': {
 			panelTitle: 'Gemini Helper',
-			tabPrompts: '📝 Prompts',
-			tabSettings: '⚙️ Settings',
+			tabPrompts: 'Prompts',
+			tabSettings: 'Settings',
 			searchPlaceholder: 'Search prompts...',
 			addPrompt: 'Add New Prompt',
 			allCategory: 'All',
@@ -215,7 +283,7 @@
 			noTextarea: 'Input not found, please click the input area first',
 			confirmDelete: 'Delete this prompt?',
 			// Settings panel
-			settingsTitle: 'Settings',
+			settingsTitle: 'General Settings',
 			clearOnSendLabel: 'Auto-fix Chinese input after send',
 			clearOnSendDesc: 'Insert zero-width char after send to fix first letter issue (Gemini Business only)',
 			settingOn: 'ON',
@@ -242,7 +310,35 @@
 			widthValue: 'Width Value',
 			widthUnit: 'Unit',
 			unitPx: 'Pixels (px)',
-			unitPercent: 'Percentage (%)'
+			unitPercent: 'Percentage (%)',
+			// Outline feature
+			tabOutline: 'Outline',
+			outlineEmpty: 'No outline content',
+			outlineRefresh: 'Refresh',
+			outlineSettings: 'Outline Settings',
+			enableOutline: 'Enable Outline',
+			outlineMaxLevel: 'Heading Levels',
+			outlineLevelAll: 'All (1-6)',
+			outlineLevel1: 'Level 1 only',
+			outlineLevel2: 'Up to Level 2',
+			outlineLevel3: 'Up to Level 3',
+			// Refresh button hints
+			refreshPrompts: 'Refresh Prompts',
+			refreshOutline: 'Refresh Outline',
+			refreshSettings: 'Refresh Settings',
+			// Outline advanced toolbar
+			outlineScrollBottom: 'Scroll to bottom',
+			outlineScrollTop: 'Scroll to top',
+			outlineExpandAll: 'Expand all',
+			outlineCollapseAll: 'Collapse all',
+			outlineSearch: 'Search outline...',
+			outlineSearchResult: 'result(s)',
+			outlineLevelHint: 'headings',
+			// Tab Order Settings
+			tabOrderSettings: 'Interface Layout',
+			tabOrderDesc: 'Adjust the display order of panel tabs',
+			moveUp: 'Move Up',
+			moveDown: 'Move Down'
 		}
 	};
 
@@ -267,6 +363,12 @@
 		'gemini': { enabled: false, value: '70', unit: '%' },
 		'gemini-business': { enabled: false, value: '1600', unit: 'px' },
 		'genspark': { enabled: false, value: '70', unit: '%' }
+	};
+
+	// ============= 大纲功能默认配置 =============
+	const DEFAULT_OUTLINE_SETTINGS = {
+		enabled: true,
+		maxLevel: 6  // 显示到几级标题 (1-6)
 	};
 
 	// 语言检测函数（支持手动设置）
@@ -336,7 +438,7 @@
 
 		/**
 		 * 获取提交按钮选择器，可以匹配ID、类名、属性等选择器
-		 * 
+		 *
 		 * @returns 提交按钮选择器
 		 */
 		getSubmitButtonSelectors() {
@@ -363,7 +465,7 @@
 
 		/**
 		 * 验证输入框是否有效
-		 * @param {HTMLElement} element 
+		 * @param {HTMLElement} element
 		 * @returns {boolean}
 		 */
 		isValidTextarea(element) {
@@ -372,7 +474,7 @@
 
 		/**
 		 * 向输入框插入内容
-		 * @param {string} content 
+		 * @param {string} content
 		 * @returns {Promise<boolean>|boolean}
 		 */
 		insertPrompt(content) { throw new Error('必须实现 insertPrompt()'); }
@@ -392,7 +494,7 @@
 		 * @returns {HTMLElement}
 		 */
 		getScrollContainer() {
-			// 1. 优先查找 Shadow DOM 中的滚动容器 (恢复原版逻辑)
+			// 1. 优先查找 Shadow DOM 中的滚动容器
 			const scrollContainerFromShadow = this.findScrollContainerInShadowDOM(document);
 			if (scrollContainerFromShadow) {
 				return scrollContainerFromShadow;
@@ -423,8 +525,8 @@
 
 		/**
 		 * 在 Shadow DOM 中递归查找滚动容器
-		 * @param {Node} root 
-		 * @param {number} depth 
+		 * @param {Node} root
+		 * @param {number} depth
 		 * @returns {HTMLElement|null}
 		 */
 		findScrollContainerInShadowDOM(root, depth = 0) {
@@ -454,7 +556,7 @@
 		 * 页面加载完成后执行
 		 */
 		afterPropertiesSet() {
-			// default do nothing
+
 		}
 
 		/**
@@ -463,6 +565,23 @@
 		 */
 		shouldInjectIntoShadow(host) {
 			return true;
+		}
+
+		/**
+		 * 获取对话历史容器的选择器
+		 * @returns {string} CSS 选择器
+		 */
+		getResponseContainerSelector() {
+			return '';
+		}
+
+		/**
+		 * 从页面提取大纲（标题列表）
+		 * @param {number} maxLevel 最大标题级别 (1-6)
+		 * @returns {Array<{level: number, text: string, element: Element|null}>}
+		 */
+		extractOutline(maxLevel = 6) {
+			return [];
 		}
 	}
 
@@ -550,6 +669,36 @@
 				document.execCommand('selectAll', false, null);
 				document.execCommand('delete', false, null);
 			}
+		}
+
+		getResponseContainerSelector() {
+			return 'infinite-scroller.chat-history';
+		}
+
+		extractOutline(maxLevel = 6) {
+			const outline = [];
+			const container = document.querySelector(this.getResponseContainerSelector());
+			if (!container) return outline;
+
+			// Gemini 使用标准的 h1-h6 标签，带有 data-path-to-node 属性
+			const headingSelectors = [];
+			for (let i = 1; i <= maxLevel; i++) {
+				headingSelectors.push(`h${i}`);
+			}
+
+			const headings = container.querySelectorAll(headingSelectors.join(', '));
+			headings.forEach(heading => {
+				const level = parseInt(heading.tagName.charAt(1), 10);
+				if (level <= maxLevel) {
+					outline.push({
+						level,
+						text: heading.textContent.trim(),
+						element: heading
+					});
+				}
+			});
+
+			return outline;
 		}
 
 	}
@@ -774,9 +923,55 @@
 
 		afterPropertiesSet(clearOnInit = true) {
 			// fixed: gemini business 在使用中文输入时，首字母会自动转换为英文，多一个字母
-			// 根据 clearOnInit 参数决定是否插入零宽字符
+			// 根据 clearOnInit 参数决定是否在初始化时插入零宽字符
 			if (clearOnInit) {
 				this.clearTextarea();
+			}
+		}
+
+		getResponseContainerSelector() {
+			// Gemini Business 使用 Shadow DOM，返回空字符串表示需要特殊处理
+			return '';
+		}
+
+		extractOutline(maxLevel = 6) {
+			const outline = [];
+			// 在 Shadow DOM 中递归查找所有标题
+			this.findHeadingsInShadowDOM(document, outline, maxLevel, 0);
+			return outline;
+		}
+
+		// 在 Shadow DOM 中递归查找标题
+		findHeadingsInShadowDOM(root, outline, maxLevel, depth) {
+			if (depth > 15) return;
+
+			// 在当前层级查找标题（h1-h6）
+			if (root !== document) {
+				const headingSelector = Array.from({ length: maxLevel }, (_, i) => `h${i + 1}`).join(', ');
+				try {
+					const headings = root.querySelectorAll(headingSelector);
+					headings.forEach(heading => {
+						// 只匹配包含 data-markdown-start-index 的标题（排除 logo 等非 AI 回复内容）
+						const span = heading.querySelector('span[data-markdown-start-index]');
+						if (span) {
+							const level = parseInt(heading.tagName[1], 10);
+							const text = span.textContent.trim();
+							if (text) {
+								outline.push({ level, text, element: heading });
+							}
+						}
+					});
+				} catch (e) {
+					// 忽略选择器错误
+				}
+			}
+
+			// 递归查找 Shadow DOM
+			const allElements = root.querySelectorAll('*');
+			for (const el of allElements) {
+				if (el.shadowRoot) {
+					this.findHeadingsInShadowDOM(el.shadowRoot, outline, maxLevel, depth + 1);
+				}
 			}
 		}
 	}
@@ -1072,6 +1267,664 @@
 	// ==================== 核心管理类 ====================
 
 	/**
+	 * 通用大纲管理器
+	 * 负责大纲的 UI 渲染、交互和状态管理
+	 * 数据源由外部适配器提供
+	 */
+	class OutlineManager {
+		constructor(config) {
+			this.container = config.container;
+			this.settings = config.settings;
+			this.onSettingsChange = config.onSettingsChange;
+			this.t = config.i18n || ((k) => k);
+
+			this.state = {
+				tree: null,
+				treeKey: '',
+				minLevel: 1,
+				expandLevel: this.settings.outline?.maxLevel || 6,
+				levelCounts: {},
+				isAllExpanded: false,
+				rawOutline: [],
+				// 搜索相关状态
+				searchQuery: '',
+				searchLevelManual: false, // 标记用户是否在搜索时手动调整了层级
+				searchResults: null, // 存储搜索匹配信息 { matchedIds: Set, relevantIds: Set }
+				preSearchState: null, // 搜索前的状态快照
+			};
+
+			this.init();
+		}
+
+		init() {
+			this.createUI();
+		}
+
+		createUI() {
+			const container = this.container;
+			clearElementSafely(container);
+
+			const content = createElementSafely('div', { className: 'outline-content' });
+
+			// 固定工具栏
+			const toolbar = createElementSafely('div', { className: 'outline-fixed-toolbar' });
+
+			// 第一行：按钮和搜索占位
+			const row1 = createElementSafely('div', { className: 'outline-toolbar-row' });
+
+			// 滚动按钮
+			const scrollBtn = createElementSafely('button', {
+				className: 'outline-toolbar-btn',
+				id: 'outline-scroll-btn',
+				title: this.t('outlineScrollBottom')
+			}, '⬇');
+			scrollBtn.addEventListener('click', () => this.scrollList());
+			row1.appendChild(scrollBtn);
+
+			// 展开/折叠按钮
+			const expandBtn = createElementSafely('button', {
+				className: 'outline-toolbar-btn',
+				id: 'outline-expand-btn',
+				title: this.t('outlineExpandAll')
+			}, '⊕');
+			expandBtn.addEventListener('click', () => this.toggleExpandAll());
+			row1.appendChild(expandBtn);
+
+			// 搜索框区域
+			const searchWrapper = createElementSafely('div', { className: 'outline-search-wrapper' });
+
+			const searchInput = createElementSafely('input', {
+				type: 'text',
+				className: 'outline-search-input',
+				placeholder: this.t('outlineSearch'),
+				value: this.state.searchQuery
+			});
+
+			const clearBtn = createElementSafely('button', {
+				className: 'outline-search-clear hidden',
+				title: this.t('clear')
+			}, '×');
+
+			// 搜索事件处理
+			let debounceTimer;
+			searchInput.addEventListener('input', (e) => {
+				const val = e.target.value;
+				clearBtn.classList.toggle('hidden', !val);
+
+				clearTimeout(debounceTimer);
+				debounceTimer = setTimeout(() => {
+					this.handleSearch(val.trim());
+				}, 300);
+			});
+
+			searchInput.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape') {
+					searchInput.value = '';
+					clearBtn.classList.add('hidden');
+					this.handleSearch('');
+					searchInput.blur();
+				}
+			});
+
+			clearBtn.addEventListener('click', () => {
+				searchInput.value = '';
+				clearBtn.classList.add('hidden');
+				this.handleSearch('');
+				searchInput.focus();
+			});
+
+			searchWrapper.appendChild(searchInput);
+			searchWrapper.appendChild(clearBtn);
+			row1.appendChild(searchWrapper);
+
+			toolbar.appendChild(row1);
+
+			// 第二行：层级滑块
+			const row2 = createElementSafely('div', { className: 'outline-toolbar-row' });
+			const sliderContainer = createElementSafely('div', { className: 'outline-level-slider-container' });
+
+			// 层级节点
+			const dotsContainer = createElementSafely('div', { className: 'outline-level-dots', id: 'outline-level-dots' });
+			const levelLine = createElementSafely('div', { className: 'outline-level-line' });
+			const levelProgress = createElementSafely('div', { className: 'outline-level-progress', id: 'outline-level-progress' });
+			levelLine.appendChild(levelProgress);
+			dotsContainer.appendChild(levelLine);
+
+			// 创建 6 个层级节点（0 表示不展开，1-6 表示层级）
+			for (let i = 0; i <= 6; i++) {
+				const dot = createElementSafely('div', {
+					className: `outline-level-dot ${i <= (this.state.expandLevel) ? 'active' : ''}`,
+					'data-level': i
+				});
+				const tooltip = createElementSafely('div', { className: 'outline-level-dot-tooltip' });
+				if (i === 0) {
+					tooltip.textContent = '⊖'; // 不展开
+				} else {
+					tooltip.textContent = `H${i}: 0`;
+				}
+				dot.appendChild(tooltip);
+				dot.addEventListener('click', () => this.setLevel(i));
+				dotsContainer.appendChild(dot);
+			}
+
+			sliderContainer.appendChild(dotsContainer);
+			row2.appendChild(sliderContainer);
+			toolbar.appendChild(row2);
+			content.appendChild(toolbar);
+
+			// 搜索结果统计条 (插入在工具栏和列表之间)
+			const resultBar = createElementSafely('div', {
+				className: 'outline-result-bar hidden',
+				id: 'outline-result-bar'
+			});
+			content.appendChild(resultBar);
+
+			// 大纲列表包装器（可滚动）
+			const listWrapper = createElementSafely('div', { className: 'outline-list-wrapper', id: 'outline-list-wrapper' });
+			const list = createElementSafely('div', { className: 'outline-list', id: 'outline-list' });
+			listWrapper.appendChild(list);
+			content.appendChild(listWrapper);
+
+			container.appendChild(content);
+		}
+
+		// 刷新数据
+		update(outlineData) {
+			const listContainer = document.getElementById('outline-list');
+			if (!listContainer) return;
+
+			clearElementSafely(listContainer);
+
+			if (!outlineData || outlineData.length === 0) {
+				listContainer.appendChild(createElementSafely('div', { className: 'outline-empty' }, this.t('outlineEmpty')));
+				return;
+			}
+
+			// 保存原始大纲
+			this.state.rawOutline = outlineData;
+
+			// 统计各层级数量
+			this.state.levelCounts = {};
+			outlineData.forEach(item => {
+				this.state.levelCounts[item.level] = (this.state.levelCounts[item.level] || 0) + 1;
+			});
+			this.updateTooltips();
+
+			// 智能缩进：检测最高层级
+			const minLevel = Math.min(...outlineData.map(item => item.level));
+			this.state.minLevel = minLevel;
+
+			// 构建树形结构
+			const outlineKey = outlineData.map(i => i.text).join('|');
+			let isNewTree = false;
+			if (this.state.treeKey !== outlineKey || !this.state.tree) {
+				this.state.tree = this.buildTree(outlineData, minLevel);
+				this.state.treeKey = outlineKey;
+				isNewTree = true;
+			}
+			const tree = this.state.tree;
+
+			// 如果是新树，且不在搜索模式下，初始化折叠状态
+			if (isNewTree && !this.state.searchQuery) {
+				const displayLevel = this.state.expandLevel ?? 6;
+				this.initializeCollapsedState(tree, displayLevel < minLevel ? minLevel : displayLevel);
+			}
+
+			// 如果在搜索模式，需要重新应用搜索标记
+			if (this.state.searchQuery) {
+				this.performSearch(this.state.searchQuery, false); // false = 不触发额外刷新
+			}
+
+			// 渲染
+			this.refreshCurrent();
+		}
+
+		// 处理搜索输入
+		handleSearch(query) {
+			if (!query) {
+				// === 结束搜索 ===
+				// 1. 清理搜索状态
+				this.state.searchQuery = '';
+				this.state.searchResults = null;
+				this.state.searchLevelManual = false;
+
+				// 2. 隐藏结果条
+				const resultBar = document.getElementById('outline-result-bar');
+				if (resultBar) resultBar.classList.add('hidden');
+
+				// 3. 恢复折叠状态
+				if (this.state.tree) {
+					// 3.1 先重置为全局设定的层级状态（兜底）
+					const displayLevel = this.state.expandLevel ?? 6;
+					this.clearForceExpandedState(this.state.tree, displayLevel);
+
+					// 3.2 如果有搜索前的状态快照，则恢复它（覆盖默认状态）
+					if (this.state.preSearchState) {
+						this.restoreTreeState(this.state.tree, this.state.preSearchState);
+						this.state.preSearchState = null; // 恢复后清除快照
+					}
+				}
+
+				this.refreshCurrent();
+				return;
+			}
+
+			// === 开始或更新搜索 ===
+
+			// 如果是从无搜索状态进入搜索状态，保存当前快照
+			if (!this.state.searchQuery && this.state.tree) {
+				this.state.preSearchState = {};
+				this.captureTreeState(this.state.tree, this.state.preSearchState);
+
+				// Fix Issue 2: 搜索前重置所有状态（折叠所有 + 清除手动展开标记）
+				// 这样搜索结果就只展示匹配的路径，不会受之前手动展开的干扰
+				this.clearForceExpandedState(this.state.tree, 0);
+			}
+
+			this.state.searchQuery = query;
+			this.state.searchLevelManual = false; // 重置手动层级标记
+			this.performSearch(query);
+			this.refreshCurrent();
+		}
+
+		// 执行搜索计算
+		performSearch(query, updateUI = true) {
+			if (!this.state.tree) return;
+
+			const normalize = (str) => str.toLowerCase();
+			const normalizedQuery = normalize(query);
+			let matchCount = 0;
+
+			// 递归标记树
+			// 返回值: { isMatch: boolean, hasMatchedDescendant: boolean }
+			const traverse = (nodes) => {
+				let hasAnyMatch = false;
+				nodes.forEach(node => {
+					const isMatch = normalize(node.text).includes(normalizedQuery);
+					if (isMatch) matchCount++;
+
+					node.isMatch = isMatch;
+
+					if (node.children && node.children.length > 0) {
+						const childResult = traverse(node.children);
+						node.hasMatchedDescendant = childResult;
+					} else {
+						node.hasMatchedDescendant = false;
+					}
+
+					// 如果有匹配子项，自动展开
+					if (node.hasMatchedDescendant) {
+						node.collapsed = false;
+						// node.forceExpanded = true; // 可选：是否强制标记为展开? 暂时不需要，只要 collapsed=false 即可
+					}
+
+					if (isMatch || node.hasMatchedDescendant) {
+						hasAnyMatch = true;
+					}
+				});
+				return hasAnyMatch;
+			};
+
+			traverse(this.state.tree);
+
+			// 更新结果条
+			if (updateUI) {
+				const resultBar = document.getElementById('outline-result-bar');
+				if (resultBar) {
+					resultBar.textContent = `${matchCount} ${this.t('outlineSearchResult')}`;
+					resultBar.classList.remove('hidden');
+				}
+			}
+		}
+
+		// 内部刷新（用于交互更新）
+		refreshCurrent() {
+			const listContainer = document.getElementById('outline-list');
+			if (this.state.tree && listContainer) {
+				clearElementSafely(listContainer);
+
+				// 确定当前的显示层级上限
+				// 如果在搜索模式且未手动调整，显示所有层级 (Infinity)
+				// 否则使用设定的 expandLevel
+				let displayLevel;
+				if (this.state.searchQuery && !this.state.searchLevelManual) {
+					displayLevel = 100; // 足够大以显示所有
+				} else {
+					displayLevel = this.state.expandLevel ?? 6;
+				}
+
+				if (displayLevel < this.state.minLevel) {
+					displayLevel = this.state.minLevel;
+				}
+
+				this.renderItems(listContainer, this.state.tree, this.state.minLevel, displayLevel);
+			}
+		}
+
+		// 构建树形结构
+		buildTree(outline, minLevel) {
+			const tree = [];
+			const stack = [];
+
+			outline.forEach((item, index) => {
+				const relativeLevel = item.level - minLevel + 1;
+				const node = {
+					...item,
+					relativeLevel,
+					index,
+					children: [],
+					collapsed: false
+				};
+
+				// 找到父节点
+				while (stack.length > 0 && stack[stack.length - 1].relativeLevel >= relativeLevel) {
+					stack.pop();
+				}
+
+				if (stack.length === 0) {
+					tree.push(node);
+				} else {
+					stack[stack.length - 1].children.push(node);
+				}
+
+				stack.push(node);
+			});
+
+			return tree;
+		}
+
+		// 渲染大纲项
+		renderItems(container, items, minLevel, displayLevel, parentCollapsed = false, parentForceExpanded = false) {
+			items.forEach(item => {
+				const hasChildren = item.children && item.children.length > 0;
+				const isTopLevel = item.level === minLevel;
+
+				let shouldShow;
+
+				// 计算可见性
+				const isLevelAllowed = item.level <= displayLevel || parentForceExpanded;
+
+				if (isTopLevel) {
+					// 顶层节点逻辑
+					if (this.state.searchQuery) {
+						// Fix: 搜索模式下严控顶层显示，无论是否有手动层级操作
+						// 确保 Expand All 不会将不相关的顶层节点展示出来
+						shouldShow = item.isMatch || item.hasMatchedDescendant;
+					} else {
+						// 普通模式：只需存在即可
+						shouldShow = true;
+					}
+				} else {
+					// 非顶层节点
+					const isRelevant = !this.state.searchQuery || (item.isMatch || item.hasMatchedDescendant || parentForceExpanded);
+					// 注意：parentForceExpanded 意味着父级被手动点开了，此时应该显示子级（即使不匹配）
+
+					// 综合判断
+					if (this.state.searchQuery && !this.state.searchLevelManual) {
+						// 纯搜索模式：相关即显示，忽略层级
+						// 但如果 parentForceExpanded，也显示
+						shouldShow = isRelevant && !parentCollapsed;
+					} else if (this.state.searchQuery && this.state.searchLevelManual) {
+						// 搜索且有层级限制
+						// 必须相关 AND 层级允许
+						shouldShow = isRelevant && isLevelAllowed && !parentCollapsed;
+					} else {
+						// 普通模式
+						shouldShow = isLevelAllowed && !parentCollapsed;
+					}
+				}
+
+				// 最终修正：如果父级折叠了，那肯定看不到
+				if (parentCollapsed) shouldShow = false;
+
+				const itemEl = createElementSafely('div', {
+					className: `outline-item outline-level-${item.relativeLevel}`,
+					'data-index': item.index,
+					'data-level': item.relativeLevel
+				});
+
+				const isExpanded = hasChildren && !item.collapsed;
+				const toggle = createElementSafely('span', {
+					className: `outline-item-toggle ${hasChildren ? (isExpanded ? 'expanded' : '') : 'invisible'}`
+				}, '▸');
+
+				if (hasChildren) {
+					toggle.addEventListener('click', (e) => {
+						e.stopPropagation();
+						item.collapsed = !item.collapsed;
+						if (!item.collapsed) {
+							item.forceExpanded = true;
+						}
+						toggle.classList.toggle('expanded', !item.collapsed);
+						this.refreshCurrent();
+					});
+				}
+				itemEl.appendChild(toggle);
+
+				const textEl = createElementSafely('span', { className: 'outline-item-text' });
+
+				// 高亮处理
+				if (this.state.searchQuery && item.isMatch) {
+					try {
+						const query = this.state.searchQuery;
+						const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+						const regex = new RegExp(`(${escapedQuery})`, 'gi');
+						const parts = item.text.split(regex);
+
+						textEl.innerHTML = '';
+						parts.forEach(part => {
+							if (part.toLowerCase() === query.toLowerCase()) {
+								const mark = document.createElement('mark');
+								mark.textContent = part;
+								mark.style.backgroundColor = 'rgba(255, 235, 59, 0.5)';
+								mark.style.color = 'inherit';
+								mark.style.padding = '0';
+								mark.style.borderRadius = '2px';
+								textEl.appendChild(mark);
+							} else {
+								textEl.appendChild(document.createTextNode(part));
+							}
+						});
+					} catch (e) {
+						textEl.textContent = item.text;
+					}
+				} else {
+					textEl.textContent = item.text;
+				}
+				itemEl.appendChild(textEl);
+
+				itemEl.addEventListener('click', () => {
+					if (item.element) {
+						item.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+						item.element.classList.add('outline-highlight');
+						setTimeout(() => item.element.classList.remove('outline-highlight'), 2000);
+					}
+				});
+
+				if (!shouldShow) {
+					itemEl.classList.add('outline-hidden');
+				}
+
+				container.appendChild(itemEl);
+
+				if (hasChildren) {
+					const childParentCollapsed = item.collapsed || parentCollapsed;
+					this.renderItems(
+						container,
+						item.children,
+						minLevel,
+						displayLevel,
+						childParentCollapsed,
+						item.forceExpanded || parentForceExpanded
+					);
+				}
+			});
+		}
+
+		// 初始化树的折叠状态
+		initializeCollapsedState(items, displayLevel) {
+			items.forEach(item => {
+				if (item.children && item.children.length > 0) {
+					const allChildrenHidden = item.children.every(child => child.level > displayLevel);
+					item.collapsed = allChildrenHidden;
+					this.initializeCollapsedState(item.children, displayLevel);
+				} else {
+					item.collapsed = false;
+				}
+			});
+		}
+
+		// 滚动列表
+		scrollList() {
+			const wrapper = document.getElementById('outline-list-wrapper');
+			const btn = document.getElementById('outline-scroll-btn');
+			if (!wrapper || !btn) return;
+
+			const isAtBottom = wrapper.scrollTop + wrapper.clientHeight >= wrapper.scrollHeight - 10;
+			if (isAtBottom) {
+				wrapper.scrollTo({ top: 0, behavior: 'smooth' });
+				btn.textContent = '⬇';
+				btn.title = this.t('outlineScrollBottom');
+			} else {
+				wrapper.scrollTo({ top: wrapper.scrollHeight, behavior: 'smooth' });
+				btn.textContent = '⬆';
+				btn.title = this.t('outlineScrollTop');
+			}
+		}
+
+		// 展开/折叠全部
+		toggleExpandAll() {
+			const btn = document.getElementById('outline-expand-btn');
+			if (!btn) return;
+
+			if (this.state.isAllExpanded) {
+				const minLevel = this.state.minLevel || 1;
+				this.setLevel(minLevel);
+			} else {
+				const maxActualLevel = Math.max(...Object.keys(this.state.levelCounts).map(Number), 1);
+				this.setLevel(maxActualLevel);
+			}
+		}
+
+		// 设置层级
+		setLevel(level) {
+			this.state.expandLevel = level;
+			// 更新外部设置
+			if (this.settings.outline) {
+				this.settings.outline.maxLevel = level;
+				if (this.onSettingsChange) this.onSettingsChange();
+			}
+
+			// 清除强制展开状态
+			if (this.state.tree) {
+				this.clearForceExpandedState(this.state.tree, level);
+			}
+
+			// 更新 UI
+			const dots = document.querySelectorAll('.outline-level-dot');
+			dots.forEach(dot => {
+				const dotLevel = parseInt(dot.dataset.level, 10);
+				dot.classList.toggle('active', dotLevel <= level);
+			});
+
+			const progress = document.getElementById('outline-level-progress');
+			if (progress) {
+				progress.style.width = `${(level / 6) * 100}%`;
+			}
+
+			// 如果在搜索状态下调整了 Slider，标记为手动
+			if (this.state.searchQuery) {
+				this.state.searchLevelManual = true;
+				this.refreshCurrent();
+			} else {
+				// 非搜索状态，这里可能不需要 refreshCurrent，因为 updateTooltips 或其他地方可能触发？
+				// 原有逻辑似乎没有显式调用 refreshCurrent，可能是 toggleExpnadAll 调用的？
+				// 不，setLevel 是被点击调用的。所以必须刷新。
+				this.refreshCurrent();
+			}
+
+			const btn = document.getElementById('outline-expand-btn');
+			const maxActualLevel = Math.max(...Object.keys(this.state.levelCounts).map(Number), 1);
+			if (btn) {
+				if (level >= maxActualLevel) {
+					btn.textContent = '⊖';
+					btn.title = this.t('outlineCollapseAll');
+					this.state.isAllExpanded = true;
+				} else {
+					btn.textContent = '⊕';
+					btn.title = this.t('outlineExpandAll');
+					this.state.isAllExpanded = false;
+				}
+			}
+
+			this.refreshCurrent();
+		}
+
+		// 清除强制展开状态
+		clearForceExpandedState(items, displayLevel) {
+			items.forEach(item => {
+				item.forceExpanded = false;
+				if (item.children && item.children.length > 0) {
+					const allChildrenHidden = item.children.every(child => child.level > displayLevel);
+					item.collapsed = allChildrenHidden;
+					this.clearForceExpandedState(item.children, displayLevel);
+				} else {
+					item.collapsed = false;
+				}
+			});
+		}
+
+		// 更新提示
+		updateTooltips() {
+			const dots = document.querySelectorAll('.outline-level-dot');
+			dots.forEach(dot => {
+				const level = parseInt(dot.dataset.level, 10);
+				const tooltip = dot.querySelector('.outline-level-dot-tooltip');
+				if (tooltip && level > 0) {
+					const count = this.state.levelCounts[level] || 0;
+					tooltip.textContent = `H${level}: ${count}`;
+				}
+			});
+		}
+
+		// 捕获树的状态（expanded/collapsed）
+		captureTreeState(nodes, stateMap) {
+			nodes.forEach(node => {
+				// 使用 level + text 作为 key
+				// 注意：如果有完全相同的标题在同一级，可能会冲突，但在当前场景下可以接受
+				const key = `${node.level}_${node.text}`;
+				stateMap[key] = {
+					collapsed: node.collapsed,
+					forceExpanded: node.forceExpanded
+				};
+
+				if (node.children && node.children.length > 0) {
+					this.captureTreeState(node.children, stateMap);
+				}
+			});
+		}
+
+		// 恢复树的状态
+		restoreTreeState(nodes, stateMap) {
+			nodes.forEach(node => {
+				const key = `${node.level}_${node.text}`;
+				const state = stateMap[key];
+				if (state) {
+					node.collapsed = state.collapsed;
+					// 只有当明确标记为 forceExpanded 时才恢复它
+					if (state.forceExpanded !== undefined) {
+						node.forceExpanded = state.forceExpanded;
+					}
+				}
+
+				if (node.children && node.children.length > 0) {
+					this.restoreTreeState(node.children, stateMap);
+				}
+			});
+		}
+	}
+
+	/**
 	 * Gemini 助手核心类
 	 * 管理提示词、设置和 UI 界面
 	 */
@@ -1082,10 +1935,21 @@
 			this.isCollapsed = false;
 			this.siteAdapter = siteAdapter;
 			this.isScrolling = false; // 滚动状态锁
-			this.currentTab = 'prompts'; // 当前激活的 Tab
 			this.lang = detectLanguage(); // 当前语言
 			this.i18n = I18N[this.lang]; // 当前语言文本
 			this.settings = this.loadSettings(); // 加载设置
+
+			// 初始化当前 Tab：优先使用设置的第一个 Tab
+			this.currentTab = this.settings.tabOrder && this.settings.tabOrder.length > 0
+				? this.settings.tabOrder[0]
+				: 'prompts';
+
+			// 兜底：如果首个 Tab 是 outline 且被禁用，则回退到 prompts
+			if (this.currentTab === 'outline' && !this.settings.outline?.enabled) {
+				this.currentTab = 'prompts';
+			}
+
+			this.outlineManager = null;
 			this.init();
 		}
 
@@ -1110,9 +1974,14 @@
 		// 加载设置
 		loadSettings() {
 			const widthSettings = GM_getValue(SETTING_KEYS.PAGE_WIDTH, DEFAULT_WIDTH_SETTINGS);
+			const outlineSettings = GM_getValue(SETTING_KEYS.OUTLINE, DEFAULT_OUTLINE_SETTINGS);
+			const tabOrder = GM_getValue(SETTING_KEYS.TAB_ORDER, DEFAULT_TAB_ORDER);
+
 			return {
 				clearTextareaOnSend: GM_getValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, false), // 默认关闭
-				pageWidth: widthSettings[this.siteAdapter.getSiteId()] || DEFAULT_WIDTH_SETTINGS[this.siteAdapter.getSiteId()]
+				pageWidth: widthSettings[this.siteAdapter.getSiteId()] || DEFAULT_WIDTH_SETTINGS[this.siteAdapter.getSiteId()],
+				outline: outlineSettings,
+				tabOrder: tabOrder
 			};
 		}
 
@@ -1123,6 +1992,10 @@
 			const allWidthSettings = GM_getValue(SETTING_KEYS.PAGE_WIDTH, DEFAULT_WIDTH_SETTINGS);
 			allWidthSettings[this.siteAdapter.getSiteId()] = this.settings.pageWidth;
 			GM_setValue(SETTING_KEYS.PAGE_WIDTH, allWidthSettings);
+			// 保存大纲设置
+			GM_setValue(SETTING_KEYS.OUTLINE, this.settings.outline);
+			// 保存 Tab 顺序
+			GM_setValue(SETTING_KEYS.TAB_ORDER, this.settings.tabOrder);
 		}
 
 		addPrompt(prompt) {
@@ -1170,6 +2043,12 @@
 			// 创建并应用页面宽度样式
 			this.widthStyleManager = new WidthStyleManager(this.siteAdapter, this.settings.pageWidth);
 			this.widthStyleManager.apply();
+
+			// 如果初始 Tab 是大纲，立即刷新内容
+			if (this.currentTab === 'outline') {
+				// 稍微延迟一下，确保 DOM 已经就绪
+				setTimeout(() => this.refreshOutline(), 500);
+			}
 		}
 
 		createStyles() {
@@ -1189,7 +2068,8 @@
                     right: 20px;
                     transform: translateY(-50%);
                     width: 320px;
-                    max-height: 70vh;
+                    height: 80vh;
+                    min-height: 600px;
                     background: white;
                     border-radius: 12px;
                     box-shadow: 0 10px 40px rgba(0,0,0,0.15);
@@ -1317,10 +2197,13 @@
                 .quick-prompt-btn:hover { transform: scale(1.1); }
                 /* 快捷按钮组（收起时显示） */
                 .quick-btn-group {
-                    position: fixed; bottom: 100px; right: 30px; display: flex; flex-direction: column; gap: 10px;
+                    position: fixed; bottom: 120px; right: 30px;
+                    display: flex; flex-direction: column; gap: 10px;
                     z-index: 999997; transition: opacity 0.3s;
                 }
                 .quick-btn-group.hidden { display: none; }
+                .hidden { display: none !important; }
+                .outline-hidden { display: none !important; }
                 .prompt-toast {
                     position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981;
                     color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px;
@@ -1330,7 +2213,7 @@
                 /* 快捷跳转按钮组（面板内） */
                 .scroll-nav-container {
                     display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #e5e7eb;
-                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
                     border-radius: 0 0 12px 12px; justify-content: center;
                 }
                 .scroll-nav-btn {
@@ -1380,60 +2263,160 @@
                     color: ${colors.primary}; border-bottom-color: ${colors.primary}; background: white;
                 }
                 /* 面板内容区 */
-                .prompt-panel-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+                .prompt-panel-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 280px; }
                 .prompt-panel-content.hidden { display: none; }
-                /* 设置面板 */
+                /* 设置面板样式 - 合并优化 */
                 .settings-content { padding: 16px; overflow-y: auto; flex: 1; }
-                .settings-section { margin-bottom: 20px; }
+                .settings-section { margin-bottom: 24px; }
                 .settings-section-title {
-                    font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 12px;
-                    padding-bottom: 8px; border-bottom: 1px solid #e5e7eb;
+                    font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 8px;
+                    text-transform: uppercase; letter-spacing: 0.5px; padding-left: 4px; border-bottom: none;
                 }
                 .setting-item {
-                    display: flex; align-items: flex-start; justify-content: space-between;
+                    display: flex; justify-content: space-between; align-items: center;
                     padding: 12px; background: #f9fafb; border-radius: 8px; margin-bottom: 8px;
+                    border: 1px solid #f3f4f6; transition: all 0.2s;
                 }
-                .setting-item-info { flex: 1; margin-right: 12px; }
-                .setting-item-label { font-size: 14px; font-weight: 500; color: #1f2937; margin-bottom: 4px; }
-                .setting-item-desc { font-size: 12px; color: #6b7280; line-height: 1.4; }
-                /* 开关组件 */
-                .setting-toggle {
-                    position: relative; width: 44px; height: 24px; background: #d1d5db;
-                    border-radius: 12px; cursor: pointer; transition: all 0.2s; flex-shrink: 0;
-                }
-                .setting-toggle.active { background: ${colors.primary}; }
-                .setting-toggle::after {
-                    content: ''; position: absolute; top: 2px; left: 2px;
-                    width: 20px; height: 20px; background: white; border-radius: 50%;
-                    transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                }
-                .setting-toggle.active::after { left: 22px; }
-                /* 下拉选择框 */
-                .setting-select {
-                    padding: 6px 10px; font-size: 13px; border: 1px solid #d1d5db;
-                    border-radius: 6px; background: white; color: #374151;
-                    cursor: pointer; min-width: 100px; flex-shrink: 0;
-                }
-                .setting-select:focus { outline: none; border-color: ${colors.primary}; }
-                .settings-empty {
-                    text-align: center; color: #9ca3af; padding: 40px 20px; font-size: 14px;
-                }
-                /* 设置面板样式 */
-                .settings-content { padding: 16px; overflow-y: auto; max-height: calc(70vh - 60px); }
-                .settings-section { margin-bottom: 24px; }
-                .settings-section-title { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; padding-left: 4px; }
-                .setting-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f9fafb; border-radius: 8px; margin-bottom: 8px; border: 1px solid #f3f4f6; transition: all 0.2s; }
-                .setting-item:hover { border-color: ${colors.primary}; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+                .setting-item:hover { border-color: linear-gradient(135deg, #4285f4 0%, #34a853 100%); background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
                 .setting-item-info { flex: 1; margin-right: 12px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
                 .setting-item-label { font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 2px; white-space: nowrap; }
                 .setting-item-desc { font-size: 12px; color: #9ca3af; line-height: 1.3; }
                 .setting-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-                .setting-select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: #374151; background: white; outline: none; transition: all 0.2s; height: 32px; box-sizing: border-box; }
-                .setting-select:focus { border-color: ${colors.primary}; box-shadow: 0 0 0 2px rgba(66,133,244,0.1); }
-                .setting-toggle { width: 46px; height: 24px; background: #d1d5db; border-radius: 12px; position: relative; cursor: pointer; transition: all 0.3s; flex-shrink: 0; }
-                .setting-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: all 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-                .setting-toggle.active { background: ${colors.primary}; }
-                .setting-toggle.active::after { left: 24px; }
+                .setting-select {
+                    padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+                    color: #374151; background: white; outline: none; transition: all 0.2s; height: 32px; box-sizing: border-box;
+                    min-width: 100px;
+                }
+                .setting-select:focus { border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.1); }
+                .setting-toggle {
+                    width: 44px; height: 24px; background: #d1d5db; border-radius: 12px; position: relative;
+                    cursor: pointer; transition: all 0.3s; flex-shrink: 0;
+                }
+                .setting-toggle::after {
+                    content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
+                    background: white; border-radius: 50%; transition: all 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                }
+                .setting-toggle.active { background: #4285f4; } /* 默认蓝色，会被JS覆盖 */
+                .setting-toggle.active::after { left: 22px; }
+
+                /* 大纲面板样式 */
+                .outline-content {
+                    display: flex; flex-direction: column; flex: 1; min-height: 200px; user-select: none; overflow: hidden;
+                }
+                /* 大纲固定工具栏 */
+                .outline-fixed-toolbar {
+                    padding: 10px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+                    flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;
+                }
+                .outline-toolbar-row {
+                    display: flex; align-items: center; gap: 8px;
+                }
+                .outline-toolbar-btn {
+                    width: 28px; height: 28px; border: 1px solid #d1d5db; border-radius: 6px;
+                    background: white; color: #6b7280; cursor: pointer; display: flex;
+                    align-items: center; justify-content: center; font-size: 14px;
+                    transition: all 0.2s; flex-shrink: 0;
+                }
+                .outline-toolbar-btn:hover { border-color: ${colors.primary}; color: ${colors.primary}; background: #f0f9ff; }
+                .outline-toolbar-btn.active { border-color: ${colors.primary}; color: white; background: ${colors.primary}; }
+                .outline-search-input {
+                    flex: 1; height: 28px; padding: 0 10px; border: 1px solid #d1d5db; border-radius: 6px;
+                    font-size: 13px; color: #374151; outline: none; transition: all 0.2s;
+                }
+                .outline-search-input:focus { border-color: ${colors.primary}; box-shadow: 0 0 0 2px rgba(66,133,244,0.1); }
+                .outline-search-input::placeholder { color: #9ca3af; }
+                .outline-search-clear {
+                    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+                    width: 16px; height: 16px; border: none; background: #d1d5db; color: white;
+                    border-radius: 50%; cursor: pointer; font-size: 10px; line-height: 16px; text-align: center;
+                }
+                .outline-search-clear:hover { background: #9ca3af; }
+                .outline-search-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
+                .outline-search-result { font-size: 12px; color: #6b7280; margin-left: 8px; white-space: nowrap; }
+                .outline-result-bar {
+                    padding: 6px 12px; background: #eff6ff; color: #1d4ed8; font-size: 12px;
+                    border-bottom: 1px solid #dbeafe; text-align: center; flex-shrink: 0;
+                    transition: all 0.3s;
+                }
+                /* 层级滑块 */
+                .outline-level-slider-container {
+                    display: flex; align-items: center; gap: 6px; width: 100%;
+                }
+                .outline-level-slider {
+                    flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+                    background: #e5e7eb; border-radius: 2px; outline: none; cursor: pointer;
+                }
+                .outline-level-slider::-webkit-slider-thumb {
+                    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+                    background: ${colors.primary}; cursor: pointer; border: 2px solid white;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                }
+                .outline-level-slider::-moz-range-thumb {
+                    width: 14px; height: 14px; border-radius: 50%;
+                    background: ${colors.primary}; cursor: pointer; border: 2px solid white;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                }
+                .outline-level-dots {
+                    display: flex; justify-content: space-between; align-items: center;
+                    position: relative; flex: 1; height: 24px;
+                }
+                .outline-level-dot {
+                    width: 12px; height: 12px; border-radius: 50%; background: #d1d5db;
+                    cursor: pointer; transition: all 0.2s; position: relative; z-index: 2;
+                    border: 2px solid white; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                }
+                .outline-level-dot:hover { background: ${colors.primary}; transform: scale(1.2); }
+                .outline-level-dot.active { background: ${colors.primary}; }
+                .outline-level-dot-tooltip {
+                    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+                    background: #374151; color: white; padding: 4px 8px; border-radius: 4px;
+                    font-size: 11px; white-space: nowrap; opacity: 0; visibility: hidden;
+                    transition: all 0.2s; pointer-events: none; margin-bottom: 4px;
+                }
+                .outline-level-dot:hover .outline-level-dot-tooltip { opacity: 1; visibility: visible; }
+                .outline-level-line {
+                    position: absolute; left: 10px; right: 10px; top: 50%; height: 4px;
+                    background: #e5e7eb; transform: translateY(-50%); z-index: 1; border-radius: 2px;
+                }
+                .outline-level-progress {
+                    position: absolute; left: 0; top: 0; height: 100%; background: ${colors.primary};
+                    border-radius: 2px; transition: width 0.2s;
+                }
+                /* 大纲列表区 */
+                .outline-list-wrapper { flex: 1; overflow-y: auto; padding: 8px 12px; }
+                .outline-list { display: flex; flex-direction: column; gap: 2px; }
+                .outline-item {
+                    padding: 6px 10px 6px 10px; border-radius: 6px; cursor: pointer;
+                    background: transparent; border: 1px solid transparent;
+                    font-size: 13px; color: #374151; transition: all 0.15s;
+                    display: flex; align-items: center; position: relative;
+                }
+                .outline-item:hover { background: #f3f4f6; }
+                .outline-item.highlight { background: #dbeafe; border-color: ${colors.primary}; }
+				.outline-item-toggle {
+					width: 24px; min-width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+					color: #9ca3af; cursor: pointer; transition: all 0.2s ease;
+					font-size: 16px; flex-shrink: 0; margin-right: 2px; box-sizing: border-box; border-radius: 4px;
+				}
+				.outline-item-toggle:hover { color: ${colors.primary}; background-color: rgba(0,0,0,0.05); }
+				.outline-item-toggle.expanded { transform: rotate(90deg); color: ${colors.primary}; }
+				.outline-item-toggle.invisible { opacity: 0; cursor: default; pointer-events: none; visibility: visible !important; display: inline-flex !important; }
+				.outline-item-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 24px; }
+                .outline-item.collapsed-children { display: none; }
+                /* 大纲层级缩进 - 箭头跟随缩进，文字保持左对齐 */
+                .outline-level-1 { padding-left: 10px; font-weight: 600; font-size: 14px; }
+                .outline-level-2 { padding-left: 28px; font-weight: 500; }
+                .outline-level-3 { padding-left: 46px; }
+                .outline-level-4 { padding-left: 64px; font-size: 12px; }
+                .outline-level-5 { padding-left: 82px; font-size: 12px; color: #6b7280; }
+                .outline-level-6 { padding-left: 100px; font-size: 12px; color: #9ca3af; }
+                .outline-empty { text-align: center; color: #9ca3af; padding: 40px 20px; font-size: 14px; }
+                /* 大纲高亮效果 */
+                .outline-highlight { animation: outlineHighlight 2s ease-out; }
+                @keyframes outlineHighlight {
+                    0% { background: rgba(66, 133, 244, 0.3); }
+                    100% { background: transparent; }
+                }
             `;
 			document.head.appendChild(style);
 		}
@@ -1457,7 +2440,7 @@
 			title.appendChild(createElementSafely('span', { className: 'site-indicator' }, this.siteAdapter.getName()));
 
 			const controls = createElementSafely('div', { className: 'prompt-panel-controls' });
-			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: this.t('refresh') }, '⟳');
+			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: this.t('refreshPrompts') }, '⟳');
 			const toggleBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: this.t('collapse') }, '−');
 			controls.appendChild(refreshBtn);
 			controls.appendChild(toggleBtn);
@@ -1467,15 +2450,51 @@
 
 			// Tab 栏
 			const tabs = createElementSafely('div', { className: 'prompt-panel-tabs' });
-			const promptsTab = createElementSafely('button', { className: 'prompt-panel-tab active', 'data-tab': 'prompts' }, this.t('tabPrompts'));
-			const settingsTab = createElementSafely('button', { className: 'prompt-panel-tab', 'data-tab': 'settings' }, this.t('tabSettings'));
-			promptsTab.addEventListener('click', () => this.switchTab('prompts'));
-			settingsTab.addEventListener('click', () => this.switchTab('settings'));
-			tabs.appendChild(promptsTab);
-			tabs.appendChild(settingsTab);
 
-			// 提示词面板内容区
-			const promptsContent = createElementSafely('div', { className: 'prompt-panel-content', id: 'prompts-content' });
+			// 根据设置的顺序渲染 Tab
+			const tabOrder = this.settings.tabOrder || DEFAULT_TAB_ORDER;
+
+			// 确保所有 Tab 都存在（防止新版本新增 Tab 或配置丢失）
+			const allTabs = new Set([...tabOrder, ...DEFAULT_TAB_ORDER]);
+			// 过滤掉未定义的 Tab ID
+			const validTabs = Array.from(allTabs).filter(id => TAB_DEFINITIONS[id]);
+
+			validTabs.forEach(tabId => {
+				const def = TAB_DEFINITIONS[tabId];
+
+				// 特殊处理：如果大纲被禁用，添加 hidden 类，但仍然渲染（为了保持 DOM 结构一致性，或者稍后在 switchTab 处理可见性）
+				// 这里稍微调整逻辑：创建 button，初始 class 根据状态决定
+				let className = 'prompt-panel-tab';
+				if (this.currentTab === tabId) className += ' active';
+
+				// 大纲特殊显隐逻辑
+				if (tabId === 'outline' && !this.settings.outline?.enabled) {
+					className += ' hidden';
+				}
+
+				const btn = createElementSafely('button', {
+					className: className,
+					'data-tab': tabId,
+					id: `${tabId}-tab`
+				});
+
+				// 添加图标和文本
+				btn.appendChild(createElementSafely('span', { style: 'margin-right: 6px;' }, def.icon));
+				btn.appendChild(document.createTextNode(this.t(def.labelKey)));
+
+				btn.addEventListener('click', () => this.switchTab(tabId));
+				tabs.appendChild(btn);
+			});
+
+			panel.appendChild(header);
+			panel.appendChild(tabs);
+
+			// 内容容器需按固定顺序创建（DOM 结构不受 Tab 顺序影响，只影响 Tab 按钮顺序）
+			// 1. 提示词面板内容区
+			const promptsContent = createElementSafely('div', {
+				className: `prompt-panel-content${this.currentTab === 'prompts' ? '' : ' hidden'}`,
+				id: 'prompts-content'
+			});
 
 			const searchBar = createElementSafely('div', { className: 'prompt-search-bar' });
 			const searchInput = createElementSafely('input', { className: 'prompt-search-input', id: 'prompt-search', type: 'text', placeholder: this.t('searchPlaceholder') });
@@ -1493,13 +2512,33 @@
 			promptsContent.appendChild(list);
 			promptsContent.appendChild(addBtn);
 
-			// 设置面板内容区
-			const settingsContent = createElementSafely('div', { className: 'prompt-panel-content hidden', id: 'settings-content' });
+
+
+			// 2. 大纲面板内容区
+			const outlineContent = createElementSafely('div', {
+				className: `prompt-panel-content${this.currentTab === 'outline' ? '' : ' hidden'}`,
+				id: 'outline-content'
+			});
+			// 初始化大纲管理器
+			this.outlineManager = new OutlineManager({
+				container: outlineContent,
+				settings: this.settings,
+				onSettingsChange: () => this.saveSettings(),
+				i18n: (k) => this.t(k)
+			});
+
+
+
+			// 3. 设置面板内容区
+			const settingsContent = createElementSafely('div', {
+				className: `prompt-panel-content${this.currentTab === 'settings' ? '' : ' hidden'}`,
+				id: 'settings-content'
+			});
 			this.createSettingsContent(settingsContent);
 
-			panel.appendChild(header);
-			panel.appendChild(tabs);
+
 			panel.appendChild(promptsContent);
+			panel.appendChild(outlineContent);
 			panel.appendChild(settingsContent);
 
 			document.body.appendChild(panel);
@@ -1554,7 +2593,33 @@
 
 			// 切换内容区
 			document.getElementById('prompts-content')?.classList.toggle('hidden', tabName !== 'prompts');
+			document.getElementById('outline-content')?.classList.toggle('hidden', tabName !== 'outline');
 			document.getElementById('settings-content')?.classList.toggle('hidden', tabName !== 'settings');
+
+			// 更新刷新按钮的提示
+			const refreshBtn = document.getElementById('refresh-prompts');
+			if (refreshBtn) {
+				const titleMap = {
+					'prompts': this.t('refreshPrompts'),
+					'outline': this.t('refreshOutline'),
+					'settings': this.t('refreshSettings')
+				};
+				refreshBtn.title = titleMap[tabName] || this.t('refresh');
+			}
+
+			// 切换到大纲时自动刷新
+			if (tabName === 'outline') {
+				this.refreshOutline();
+			}
+		}
+
+		// 刷新大纲
+		refreshOutline() {
+			if (!this.settings.outline?.enabled) return;
+			const outline = this.siteAdapter.extractOutline(6);
+			if (this.outlineManager) {
+				this.outlineManager.update(outline);
+			}
 		}
 
 		// 创建设置面板内容
@@ -1637,7 +2702,7 @@
 				className: 'setting-select',
 				id: 'width-value-input',
 				value: this.settings.pageWidth ? this.settings.pageWidth.value : '70',
-				style: 'width: 70px; text-align: right;'
+				style: 'width: 65px !important; min-width: 65px !important; text-align: right;'
 			});
 
 			const unitSelect = createElementSafely('select', {
@@ -1716,6 +2781,41 @@
 			content.appendChild(generalSection);
 			content.appendChild(widthSection);
 
+			// 大纲设置区
+			const outlineSection = createElementSafely('div', { className: 'settings-section' });
+			outlineSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('outlineSettings')));
+
+			// 启用大纲开关
+			const enableOutlineItem = createElementSafely('div', { className: 'setting-item' });
+			const enableOutlineInfo = createElementSafely('div', { className: 'setting-item-info' });
+			enableOutlineInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('enableOutline')));
+
+			const outlineToggle = createElementSafely('div', {
+				className: 'setting-toggle' + (this.settings.outline?.enabled ? ' active' : ''),
+				id: 'toggle-outline'
+			});
+			outlineToggle.addEventListener('click', () => {
+				this.settings.outline.enabled = !this.settings.outline.enabled;
+				outlineToggle.classList.toggle('active', this.settings.outline.enabled);
+				this.saveSettings();
+				// 显示/隐藏大纲 Tab
+				const outlineTab = document.getElementById('outline-tab');
+				if (outlineTab) {
+					outlineTab.classList.toggle('hidden', !this.settings.outline.enabled);
+				}
+				// 如果正在大纲 Tab 且被禁用，切换到提示词 Tab
+				if (!this.settings.outline.enabled && this.currentTab === 'outline') {
+					this.switchTab('prompts');
+				}
+				this.showToast(this.settings.outline.enabled ? this.t('settingOn') : this.t('settingOff'));
+			});
+
+			enableOutlineItem.appendChild(enableOutlineInfo);
+			enableOutlineItem.appendChild(outlineToggle);
+			outlineSection.appendChild(enableOutlineItem);
+
+			content.appendChild(outlineSection);
+
 			// 只在 Gemini Business 时添加清空输入框设置
 			if (this.siteAdapter instanceof GeminiBusinessAdapter) {
 				const clearItem = createElementSafely('div', { className: 'setting-item' });
@@ -1739,6 +2839,107 @@
 				generalSection.appendChild(clearItem);
 			}
 
+			// Tab 排序设置
+			const tabOrderSection = createElementSafely('div', { className: 'settings-section' });
+			tabOrderSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('tabOrderSettings')));
+
+			// 说明
+			const tabDesc = createElementSafely('div', {
+				className: 'setting-item-desc',
+				style: 'padding: 0 12px 8px 12px; margin-bottom: 4px;'
+			}, this.t('tabOrderDesc'));
+			tabOrderSection.appendChild(tabDesc);
+
+			const currentOrder = this.settings.tabOrder || DEFAULT_TAB_ORDER;
+			// 过滤有效定义
+			const validOrder = currentOrder.filter(id => TAB_DEFINITIONS[id]);
+
+			validOrder.forEach((tabId, index) => {
+				const def = TAB_DEFINITIONS[tabId];
+				const item = createElementSafely('div', { className: 'setting-item' });
+
+				const info = createElementSafely('div', { className: 'setting-item-info' });
+				info.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t(def.labelKey)));
+
+				const controls = createElementSafely('div', { className: 'setting-controls' });
+
+				// 上移按钮
+				const upBtn = createElementSafely('button', {
+					className: 'prompt-panel-btn',
+					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; margin-right: 4px; border: 1px solid #e5e7eb;',
+					title: this.t('moveUp')
+				});
+				upBtn.textContent = '⬆';
+				upBtn.disabled = index === 0;
+
+				// 下移按钮
+				const downBtn = createElementSafely('button', {
+					className: 'prompt-panel-btn',
+					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; border: 1px solid #e5e7eb;',
+					title: this.t('moveDown')
+				});
+				downBtn.textContent = '⬇';
+				downBtn.disabled = index === validOrder.length - 1;
+
+				// 按钮状态样式修正 helper
+				const updateButtonStyle = (btn) => {
+					if (btn.disabled) {
+						btn.style.opacity = '0.4';
+						btn.style.cursor = 'not-allowed';
+						btn.style.background = '#f3f4f6';
+					} else {
+						btn.style.opacity = '1';
+						btn.style.cursor = 'pointer';
+					}
+				};
+
+				updateButtonStyle(upBtn);
+				updateButtonStyle(downBtn);
+
+				// 事件绑定（仅在非禁用时生效，虽然 disabled 属性本身阻止了 click，但为了保险）
+				if (!upBtn.disabled) {
+					upBtn.onmouseover = () => { upBtn.style.background = '#e5e7eb'; upBtn.style.color = '#111827'; };
+					upBtn.onmouseout = () => { upBtn.style.background = '#f3f4f6'; upBtn.style.color = '#4b5563'; };
+				}
+
+				if (!downBtn.disabled) {
+					downBtn.onmouseover = () => { downBtn.style.background = '#e5e7eb'; downBtn.style.color = '#111827'; };
+					downBtn.onmouseout = () => { downBtn.style.background = '#f3f4f6'; downBtn.style.color = '#4b5563'; };
+				}
+
+				upBtn.addEventListener('click', () => {
+					if (index > 0) {
+						// 交换位置
+						const newOrder = [...validOrder];
+						[newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+						this.settings.tabOrder = newOrder;
+						this.saveSettings();
+						this.createUI(); // 重新渲染界面
+						this.switchTab('settings'); // 保持在设置页
+					}
+				});
+
+				downBtn.addEventListener('click', () => {
+					if (index < validOrder.length - 1) {
+						// 交换位置
+						const newOrder = [...validOrder];
+						[newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+						this.settings.tabOrder = newOrder;
+						this.saveSettings();
+						this.createUI(); // 重新渲染界面
+						this.switchTab('settings'); // 保持在设置页
+					}
+				});
+
+				controls.appendChild(upBtn);
+				controls.appendChild(downBtn);
+
+				item.appendChild(info);
+				item.appendChild(controls);
+				tabOrderSection.appendChild(item);
+			});
+
+			content.appendChild(tabOrderSection);
 			container.appendChild(content);
 		}
 
@@ -2194,9 +3395,25 @@
 			});
 
 			document.getElementById('refresh-prompts')?.addEventListener('click', () => {
-				this.refreshPromptList();
-				this.siteAdapter.findTextarea();
-				this.showToast(this.t('refreshed'));
+				// 根据当前 Tab 智能刷新
+				if (this.currentTab === 'outline') {
+					this.refreshOutline();
+					this.showToast(this.t('refreshed'));
+				} else if (this.currentTab === 'prompts') {
+					this.refreshPromptList();
+					this.siteAdapter.findTextarea();
+					this.showToast(this.t('refreshed'));
+				} else {
+					// 设置 Tab：重新加载设置
+					this.settings = this.loadSettings();
+					this.siteAdapter.findTextarea();
+					// 重新渲染 UI 以反映新设置
+					this.createStyles();
+					this.createUI();
+					this.bindEvents();
+					this.switchTab('settings');
+					this.showToast(this.t('refreshed'));
+				}
 			});
 
 			document.getElementById('toggle-panel')?.addEventListener('click', () => this.togglePanel());
