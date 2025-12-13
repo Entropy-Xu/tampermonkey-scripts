@@ -3309,6 +3309,31 @@
 				info.appendChild(createElement('div', { className: 'setting-item-label' }, this.t(def.labelKey)));
 
 				const controls = createElement('div', { className: 'setting-controls' });
+
+				// 特殊处理：如果是大纲 Tab，在排序按钮旁边添加开关
+				if (tabId === 'outline') {
+					const outlineToggle = createElement('div', {
+						className: 'setting-toggle' + (this.settings.outline?.enabled ? ' active' : ''),
+						id: 'toggle-outline-inline',
+						style: 'transform: scale(0.8); margin-right: 12px;',
+						title: this.t('enableOutline') // 添加提示
+					});
+					outlineToggle.addEventListener('click', (e) => {
+						e.stopPropagation();
+						this.settings.outline.enabled = !this.settings.outline.enabled;
+						outlineToggle.classList.toggle('active', this.settings.outline.enabled);
+						this.saveSettings();
+
+						const outlineTab = document.getElementById('outline-tab');
+						if (outlineTab) outlineTab.classList.toggle('hidden', !this.settings.outline.enabled);
+
+						if (!this.settings.outline.enabled && this.currentTab === 'outline') this.switchTab('prompts');
+
+						this.showToast(this.settings.outline.enabled ? this.t('settingOn') : this.t('settingOff'));
+					});
+					controls.appendChild(outlineToggle);
+				}
+
 				const upBtn = createElement('button', {
 					className: 'prompt-panel-btn',
 					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; margin-right: 4px; border: 1px solid #e5e7eb;',
@@ -3362,6 +3387,7 @@
 
 				controls.appendChild(upBtn);
 				controls.appendChild(downBtn);
+
 				item.appendChild(info);
 				item.appendChild(controls);
 				layoutContainer.appendChild(item);
@@ -3369,31 +3395,6 @@
 
 			const layoutSection = this.createCollapsibleSection(this.t('tabOrderSettings'), layoutContainer);
 			content.appendChild(layoutSection);
-
-
-			// 5. 大纲设置 (保持独立块)
-			const outlineSection = createElement('div', { className: 'settings-section' });
-			outlineSection.appendChild(createElement('div', { className: 'settings-section-title' }, this.t('outlineSettings')));
-			const enableOutlineItem = createElement('div', { className: 'setting-item' });
-			const enableOutlineInfo = createElement('div', { className: 'setting-item-info' });
-			enableOutlineInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('enableOutline')));
-			const outlineToggle = createElement('div', {
-				className: 'setting-toggle' + (this.settings.outline?.enabled ? ' active' : ''),
-				id: 'toggle-outline'
-			});
-			outlineToggle.addEventListener('click', () => {
-				this.settings.outline.enabled = !this.settings.outline.enabled;
-				outlineToggle.classList.toggle('active', this.settings.outline.enabled);
-				this.saveSettings();
-				const outlineTab = document.getElementById('outline-tab');
-				if (outlineTab) outlineTab.classList.toggle('hidden', !this.settings.outline.enabled);
-				if (!this.settings.outline.enabled && this.currentTab === 'outline') this.switchTab('prompts');
-				this.showToast(this.settings.outline.enabled ? this.t('settingOn') : this.t('settingOff'));
-			});
-			enableOutlineItem.appendChild(enableOutlineInfo);
-			enableOutlineItem.appendChild(outlineToggle);
-			outlineSection.appendChild(enableOutlineItem);
-			content.appendChild(outlineSection);
 
 
 			// 6. Gemini Business 专属设置
