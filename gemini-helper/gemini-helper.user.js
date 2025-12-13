@@ -393,7 +393,9 @@
 	// ============= 大纲功能默认配置 =============
 	const DEFAULT_OUTLINE_SETTINGS = {
 		enabled: true,
-		maxLevel: 6  // 显示到几级标题 (1-6)
+		maxLevel: 6,  // 显示到几级标题 (1-6)
+		autoUpdate: true,
+		updateInterval: 3
 	};
 
 	// 语言检测函数（支持手动设置）
@@ -2803,16 +2805,14 @@
 				mergedModelLockConfig[currentSiteId] = { ...defaults, ...(savedModelLockSettings[currentSiteId] || {}) };
 			}
 
-			// 确保大纲设置有默认值
-			if (typeof outlineSettings.autoUpdate === 'undefined') outlineSettings.autoUpdate = true;
-			if (typeof outlineSettings.updateInterval === 'undefined') outlineSettings.updateInterval = 3;
+			// 确保大纲设置有默认值 (合并默认配置与保存的配置)
+			const mergedOutlineSettings = { ...DEFAULT_OUTLINE_SETTINGS, ...outlineSettings };
 
 			return {
 				clearTextareaOnSend: GM_getValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, false), // 默认关闭
 				modelLockConfig: mergedModelLockConfig,
 				pageWidth: widthSettings[currentSiteId] || DEFAULT_WIDTH_SETTINGS[currentSiteId],
-				pageWidth: widthSettings[currentSiteId] || DEFAULT_WIDTH_SETTINGS[currentSiteId],
-				outline: outlineSettings,
+				outline: mergedOutlineSettings,
 				prompts: promptsSettings,
 				tabOrder: tabOrder,
 				preventAutoScroll: GM_getValue('gemini_prevent_auto_scroll', false)
