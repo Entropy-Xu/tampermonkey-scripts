@@ -41,10 +41,12 @@
 		OUTLINE: 'gemini_outline_settings',
 		TAB_ORDER: 'gemini_tab_order',
 		MODEL_LOCK: 'gemini_model_lock',
+		PROMPTS_SETTINGS: 'gemini_prompts_settings',
 	};
 
 	// 默认 Tab 顺序
 	const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'settings'];
+	const DEFAULT_PROMPTS_SETTINGS = { enabled: true };
 
 	// Tab 定义（用于渲染和显示）
 	const TAB_DEFINITIONS = {
@@ -605,12 +607,29 @@
 		}
 
 		/**
+		 * 获取聊天内容元素的选择器列表
+		 * 用于 MutationObserver 检测新消息，配合滚动锁定功能
+		 * @returns {string[]} CSS 选择器列表
+		 */
+		getChatContentSelectors() {
+			return [];
+		}
+
+		/**
 		 * 从页面提取大纲（标题列表）
 		 * @param {number} maxLevel 最大标题级别 (1-6)
 		 * @returns {Array<{level: number, text: string, element: Element|null}>}
 		 */
 		extractOutline(maxLevel = 6) {
 			return [];
+		}
+
+		/**
+		 * 是否支持滚动锁定功能
+		 * @returns {boolean}
+		 */
+		supportsScrollLock() {
+			return false; // 默认不支持，除非子类明确声明
 		}
 
 
@@ -973,6 +992,16 @@
 			return 'infinite-scroller.chat-history';
 		}
 
+		getChatContentSelectors() {
+			return [
+				'.model-response-container',
+				'model-response',
+				'.response-container',
+				'[data-message-id]',
+				'message-content'
+			];
+		}
+
 		extractOutline(maxLevel = 6) {
 			const outline = [];
 			const container = document.querySelector(this.getResponseContainerSelector());
@@ -1300,6 +1329,16 @@
 			return '';
 		}
 
+		getChatContentSelectors() {
+			return [
+				'.model-response-container',
+				'.message-content',
+				'[data-message-id]', // 常见消息标识
+				'ucs-conversation-message', // 企业版特定
+				'.conversation-message'
+			];
+		}
+
 		extractOutline(maxLevel = 6) {
 			const outline = [];
 			// 在 Shadow DOM 中递归查找所有标题
@@ -1381,6 +1420,14 @@
 			];
 		}
 
+		getChatContentSelectors() {
+			return [
+				'.message-content',
+				'.markdown-body',
+				'[data-testid="chat-message"]'
+			];
+		}
+
 		insertPrompt(content) {
 			if (!this.textarea) return false;
 
@@ -1405,6 +1452,10 @@
 				this.textarea.dispatchEvent(new Event('input', { bubbles: true }));
 				this.adjustTextareaHeight();
 			}
+		}
+
+		supportsScrollLock() {
+			return false;
 		}
 	}
 
@@ -1630,6 +1681,239 @@
 		}
 	}
 
+	// ==================== 滚动锁定管理器 ====================
+	/**
+	 * 滚动锁定管理器
+	 * 通过劫持原生滚动 API 和 MutationObserver 修正来实现防自动滚动
+	 */
+	class ScrollLockManager {
+		constructor(siteAdapter) {
+			this.siteAdapter = siteAdapter;
+			this.enabled = false;
+			this.originalApis = null;
+			this.observer = null;
+			this.cleanupInterval = null;
+			this.lastScrollY = window.scrollY;
+
+		}
+
+		setEnabled(enabled) {
+			if (this.enabled === enabled) return;
+			this.enabled = enabled;
+
+			if (enabled) {
+				this.enable();
+			} else {
+				this.disable();
+			}
+		}
+
+		enable() {
+			console.log('Gemini Helper: Enabling Scroll Lock System');
+			this.hijackApis();
+			this.startObserver();
+			this.startScrollListener();
+		}
+
+		disable() {
+			console.log('Gemini Helper: Disabling Scroll Lock System');
+			this.restoreApis();
+			this.stopObserver();
+			this.stopScrollListener();
+		}
+
+		hijackApis() {
+			if (this.originalApis) return; // 已经劫持
+
+			// 保存原始 API
+			this.originalApis = {
+				scrollIntoView: Element.prototype.scrollIntoView,
+				scrollTo: window.scrollTo,
+				// 保存属性描述符以便恢复
+				scrollTopDescriptor: Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop') ||
+					Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop')
+			};
+
+			const self = this;
+
+			// 1. 劫持 Element.prototype.scrollIntoView
+			Element.prototype.scrollIntoView = function (options) {
+				// 检查是否包含绕过锁定的标志 (即使是 boolean or object)
+				const shouldBypass = options && typeof options === 'object' && options.__bypassLock;
+
+				if (self.enabled && self.shouldBlockScroll() && !shouldBypass) {
+					// console.log('Gemini Helper: Blocked scrollIntoView');
+					return;
+				}
+				// 移除自定义属性以防传给原生 API 报错（虽然通常不会）
+				if (shouldBypass) {
+					// 克隆 options 以免修改原对象，或者直接删除 key
+					// 原生 scrollIntoView 会忽略未知属性
+				}
+				return self.originalApis.scrollIntoView.call(this, options);
+			};
+
+			// 2. 劫持 window.scrollTo
+			window.scrollTo = function (x, y) {
+				// 有时 y 可能是 options 对象
+				let targetY = y;
+				if (typeof x === 'object' && x !== null) {
+					targetY = x.top;
+				}
+
+				// 只有当向下大幅滚动时才拦截 (防止系统自动拉到底)
+				// 阈值设为 50px，避免误杀微小调整
+				if (self.enabled && self.shouldBlockScroll() && typeof targetY === 'number' && targetY > window.scrollY + 50) {
+					// console.log('Gemini Helper: Blocked window.scrollTo (Auto-scroll attempt)');
+					return;
+				}
+				return self.originalApis.scrollTo.apply(this, arguments);
+			};
+
+			// 3. 劫持 scrollTop setter (许多框架通过设置 scrollTop 来滚动)
+			if (this.originalApis.scrollTopDescriptor) {
+				Object.defineProperty(Element.prototype, 'scrollTop', {
+					get: function () {
+						return self.originalApis.scrollTopDescriptor.get ?
+							self.originalApis.scrollTopDescriptor.get.call(this) : this.files; // fallback (impossible normally)
+					},
+					set: function (value) {
+						if (self.enabled && self.shouldBlockScroll() && value > this.scrollTop + 50) {
+							// console.log('Gemini Helper: Blocked scrollTop setter');
+							return;
+						}
+						if (self.originalApis.scrollTopDescriptor.set) {
+							self.originalApis.scrollTopDescriptor.set.call(this, value);
+						}
+					},
+					configurable: true
+				});
+			}
+		}
+
+		restoreApis() {
+			if (!this.originalApis) return;
+
+			Element.prototype.scrollIntoView = this.originalApis.scrollIntoView;
+			window.scrollTo = this.originalApis.scrollTo;
+
+			if (this.originalApis.scrollTopDescriptor) {
+				Object.defineProperty(Element.prototype, 'scrollTop', this.originalApis.scrollTopDescriptor);
+			}
+
+			this.originalApis = null;
+		}
+
+		// 判断是否应该阻止滚动
+		// 核心逻辑：虽然功能开启，但如果用户已经滚到底部了，我们其实应该允许跟随（就像终端一样）
+		// 不过根据用户需求，既然叫 "防止自动滚动"，还是激进一点：只要开启就尽量阻止非用户触发的大幅向下滚动
+		shouldBlockScroll() {
+			// 只有当我们不在底部时，才强力阻止？或者一直阻止？
+			// 为了最好的体验：如果用户已经在底部，应该允许新内容把页面撑长，但不应该发生"跳跃"
+			// 用户的脚本逻辑很简单：开启就阻止。我们保持一致。
+			return true;
+		}
+
+		startScrollListener() {
+			// 记录用户最后滚动位置，用于自动修正
+			const onScroll = () => {
+				// 如果是用户手动滚动（或者未被劫持的滚动），更新位置
+				// 这里很难区分，但我们主要通过 MutationObserver 来回滚异常位置
+				if (this.enabled) {
+					// 只有在未被拦截的情况下，我们才认为这是"合法"的位置更新
+					// 在 scroll 事件中很难拦截，只能事后修正
+					// 这里我们只更新 lastScrollY，具体修正在 Observer 中
+					this.lastScrollY = window.scrollY;
+				}
+			};
+			window.addEventListener('scroll', onScroll, { passive: true });
+			this.onScrollHandler = onScroll;
+		}
+
+		stopScrollListener() {
+			if (this.onScrollHandler) {
+				window.removeEventListener('scroll', this.onScrollHandler);
+				this.onScrollHandler = null;
+			}
+		}
+
+		startObserver() {
+			// 监听 DOM 变化，如果发现非用户意图的滚动跳变，强制回滚
+			this.observer = new MutationObserver((mutations) => {
+				if (!this.enabled) return;
+
+				let hasNewContent = false;
+				const contentSelectors = this.siteAdapter.getChatContentSelectors();
+				if (contentSelectors.length === 0) return;
+
+				mutations.forEach(mutation => {
+					if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+						// 检查是否有新消息节点
+						for (const node of mutation.addedNodes) {
+							if (node.nodeType === 1) { // Element
+								// 使用适配器提供的选择器判断
+								for (const sel of contentSelectors) {
+									if (node.matches && node.matches(sel) || (node.querySelector && node.querySelector(sel))) {
+										hasNewContent = true;
+										break;
+									}
+								}
+							}
+							if (hasNewContent) break;
+						}
+					}
+				});
+
+				if (hasNewContent) {
+					// 如果有新内容插入，立刻检查滚动位置是否发生了非预期的改变
+					// 这里的逻辑是：如果当前位置比记录的 lastScrollY 大了很多，说明发生了自动滚动
+					// 我们强制滚回去
+					const currentScroll = window.scrollY;
+					// 阈值 100px
+					if (currentScroll > this.lastScrollY + 100) {
+						// console.log('Gemini Helper: Detected unblocked auto-scroll, changing back.');
+						window.scrollTo(this.lastScrollY, 0); // 使用原始 API 已经被劫持，这里需要 bypass 吗？
+						// 实际上我们的劫持逻辑里 window.scrollTo 会调用 apply(this, arguments)，
+						// 但我们的劫持逻辑是阻止"向下"滚动。如果是"向上"回滚 (current > last, so set to last is moving up)，是被允许的。
+						// 稍微解释：lastScrollY 是 1000，current 是 2000。window.scrollTo(1000) 是向上，允许。
+						// 所以直接调用 window.scrollTo 即可。
+					}
+				}
+			});
+
+			this.observer.observe(document.body, {
+				childList: true,
+				subtree: true
+			});
+
+			// 定时器保底
+			this.cleanupInterval = setInterval(() => {
+				if (this.enabled) {
+					const current = window.scrollY;
+					if (current > this.lastScrollY + 200) {
+						// 大幅跳变，回滚
+						window.scrollTo(this.lastScrollY, 0);
+					} else {
+						// 小幅变动，认为是合法阅读，更新基准（防止页面慢慢变长后滚不下去）
+						this.lastScrollY = current;
+					}
+				}
+			}, 500);
+		}
+
+		stopObserver() {
+			if (this.observer) {
+				this.observer.disconnect();
+				this.observer = null;
+			}
+			if (this.cleanupInterval) {
+				clearInterval(this.cleanupInterval);
+				this.cleanupInterval = null;
+			}
+		}
+	}
+
+
 	// ==================== 核心管理类 ====================
 
 	/**
@@ -1659,11 +1943,99 @@
 				preSearchState: null, // 搜索前的状态快照
 			};
 
+			// 自动更新相关
+			this.observer = null;
+			this.updateDebounceTimer = null;
+			this.isActive = false; // 标记 Tab 是否激活
+
 			this.init();
 		}
 
 		init() {
 			this.createUI();
+			this.updateAutoUpdateState();
+		}
+
+		setActive(active) {
+			this.isActive = active;
+			this.updateAutoUpdateState();
+		}
+
+		updateAutoUpdateState() {
+			// 只有当：大纲功能开启 AND 自动更新开启 AND Tab处于激活状态 时才启用 Observer
+			const shouldEnable = this.settings.outline?.enabled &&
+				this.settings.outline?.autoUpdate &&
+				this.isActive;
+
+			if (shouldEnable) {
+				this.startObserver();
+			} else {
+				this.stopObserver();
+			}
+		}
+
+		startObserver() {
+			if (this.observer) return;
+
+			// 找到聊天记录容器作为观察目标
+			// 既然我们增加了 getChatContentSelectors，也许可以用那个？
+			// 但对于大纲来说，只要 DOM 变了就可能产生新标题。观察 body 可能最稳妥但性能最差。
+			// 观察聊天容器是折中方案。
+			// 复用 SiteAdapter 的 getScrollContainer 得到的通常是主滚动容器，
+			// 或者用 getResponseContainerSelector
+			// 鉴于 Gemini Business 返回空，我们尝试观察 document.body，加上防抖，性能应该可控。
+
+			this.observer = new MutationObserver(() => {
+				this.triggerAutoUpdate();
+			});
+
+			this.observer.observe(document.body, {
+				childList: true,
+				subtree: true,
+				characterData: true // 标题文字变化也要检测
+			});
+			console.log('Gemini Helper: Outline Auto-Update Started');
+		}
+
+		stopObserver() {
+			if (this.observer) {
+				this.observer.disconnect();
+				this.observer = null;
+				console.log('Gemini Helper: Outline Auto-Update Stopped');
+			}
+			if (this.updateDebounceTimer) {
+				clearTimeout(this.updateDebounceTimer);
+				this.updateDebounceTimer = null;
+			}
+		}
+
+		triggerAutoUpdate() {
+			const interval = (this.settings.outline?.updateInterval || 5) * 1000;
+
+			// 如果已经在等待更新，不需要重置定时器（这是 throttle/debounce 的关键区别）
+			// 我们希望：只要有请求，就确保在未来某个时刻执行，但不要频繁执行
+			// 策略：如果 timer 存在，说明已经安排了更新，什么都不做（让它在原定时间触发）
+			// 只有 timer 不存在时，才设置一个新的
+			if (!this.updateDebounceTimer) {
+				this.updateDebounceTimer = setTimeout(() => {
+					this.executeAutoUpdate();
+				}, interval);
+			}
+		}
+
+		executeAutoUpdate() {
+			if (this.updateDebounceTimer) {
+				clearTimeout(this.updateDebounceTimer);
+				this.updateDebounceTimer = null;
+			}
+
+			// 触发更新回调（在 GeminiHelper 中定义，实际调用 refreshOutline）
+			if (this.config && this.config.onAutoUpdate) {
+				this.config.onAutoUpdate();
+			}
+
+			// 发送自定义事件通知外部刷新
+			window.dispatchEvent(new CustomEvent('gemini-helper-outline-auto-refresh'));
 		}
 
 		createUI() {
@@ -1820,9 +2192,18 @@
 			const minLevel = Math.min(...outlineData.map(item => item.level));
 			this.state.minLevel = minLevel;
 
+			// 在重构树之前，捕获当前的折叠状态
+			const currentStateMap = {};
+			if (this.state.tree) {
+				this.captureTreeState(this.state.tree, currentStateMap);
+			}
+
 			// 构建树形结构
 			const outlineKey = outlineData.map(i => i.text).join('|');
 			let isNewTree = false;
+			// 只要 key 变了，或者是首次构建，都重新构建树
+			// 注意：实时更新时 key 会不断变化，所以必须每次都重建树以包含新节点
+			// 但我们需要保持用户的折叠状态
 			if (this.state.treeKey !== outlineKey || !this.state.tree) {
 				this.state.tree = this.buildTree(outlineData, minLevel);
 				this.state.treeKey = outlineKey;
@@ -1830,8 +2211,26 @@
 			}
 			const tree = this.state.tree;
 
-			// 如果是新树，且不在搜索模式下，初始化折叠状态
-			if (isNewTree && !this.state.searchQuery) {
+			// 恢复折叠状态
+			if (Object.keys(currentStateMap).length > 0) {
+				this.restoreTreeState(tree, currentStateMap);
+
+				// 对于新增加的节点（在 currentStateMap 中找不到的），应用默认折叠逻辑
+				// 这里需要一个递归函数只处理未初始化的节点吗？
+				// 实际上 restoreTreeState 只恢复旧的。新节点默认在 buildTree 中可能是 collapsed: false (我们在 buildTree 里初始化为 false)
+				// 我们需要根据 expandLevel 来初始化新节点。
+				// 简单的做法：先全部应用默认 expandLevel，再用 restore 覆盖旧的？
+				// 或者：restore 之后，对剩下的新节点做处理？
+
+				// 改进策略：
+				// 1. 先按默认规则初始化所有节点（基于 expandLevel）
+				const displayLevel = this.state.expandLevel ?? 6;
+				this.initializeCollapsedState(tree, displayLevel < minLevel ? minLevel : displayLevel);
+
+				// 2. 再恢复用户之前的操作（覆盖默认）
+				this.restoreTreeState(tree, currentStateMap);
+			} else if (isNewTree && !this.state.searchQuery) {
+				// 首次加载，无旧状态
 				const displayLevel = this.state.expandLevel ?? 6;
 				this.initializeCollapsedState(tree, displayLevel < minLevel ? minLevel : displayLevel);
 			}
@@ -2100,10 +2499,30 @@
 				itemEl.appendChild(textEl);
 
 				itemEl.addEventListener('click', () => {
-					if (item.element) {
-						item.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-						item.element.classList.add('outline-highlight');
-						setTimeout(() => item.element.classList.remove('outline-highlight'), 2000);
+					let targetElement = item.element;
+
+					// 1. 检查元素是否有效
+					if (!targetElement || !targetElement.isConnected) {
+						// 尝试重新查找
+						// 简单的重新查找策略：在文档中根据文本内容找一个最相似的 H? 标签
+						// 这是一个兜底，Gemini 动态渲染可能会导致元素重建
+						const headings = document.querySelectorAll(`h${item.level}`);
+						for (const h of headings) {
+							if (h.textContent.trim() === item.text) {
+								targetElement = h;
+								break;
+							}
+						}
+					}
+
+					if (targetElement && targetElement.isConnected) {
+						// 传入 __bypassLock: true 以绕过 ScrollLockManager 的拦截
+						// 恢复 behavior: 'smooth'，因为我们已经处理了元素重新查找，应该可以兼容
+						targetElement.scrollIntoView({ behavior: 'smooth', block: 'center', __bypassLock: true });
+						targetElement.classList.add('outline-highlight');
+						setTimeout(() => targetElement.classList.remove('outline-highlight'), 2000);
+					} else {
+						console.warn('Gemini Helper: Outline item element lost and not found:', item.text);
 					}
 				});
 
@@ -2314,9 +2733,25 @@
 				? this.settings.tabOrder[0]
 				: 'prompts';
 
-			// 兜底：如果首个 Tab 是 outline 且被禁用，则回退到 prompts
-			if (this.currentTab === 'outline' && !this.settings.outline?.enabled) {
-				this.currentTab = 'prompts';
+			// 兜底：如果首个 Tab 被禁用，则回退到 safe tab
+			const isOutlineDisabled = this.currentTab === 'outline' && !this.settings.outline?.enabled;
+			const isPromptsDisabled = this.currentTab === 'prompts' && !this.settings.prompts?.enabled;
+
+			if (isOutlineDisabled || isPromptsDisabled) {
+				// 尝试找一个可用的 tab
+				const availableTab = this.settings.tabOrder.find(t => {
+					if (t === 'outline') return this.settings.outline?.enabled;
+					if (t === 'prompts') return this.settings.prompts?.enabled;
+					return true; // settings always enabled
+				});
+				this.currentTab = availableTab || 'settings';
+			}
+
+			// 初始化滚动锁定管理器
+			this.scrollLockManager = new ScrollLockManager(this.siteAdapter);
+			// 根据设置初始化状态，前提是当前站点支持
+			if (this.settings.preventAutoScroll && this.siteAdapter.supportsScrollLock()) {
+				this.scrollLockManager.setEnabled(true);
 			}
 
 			this.outlineManager = null;
@@ -2345,6 +2780,7 @@
 		loadSettings() {
 			const widthSettings = GM_getValue(SETTING_KEYS.PAGE_WIDTH, DEFAULT_WIDTH_SETTINGS);
 			const outlineSettings = GM_getValue(SETTING_KEYS.OUTLINE, DEFAULT_OUTLINE_SETTINGS);
+			const promptsSettings = GM_getValue(SETTING_KEYS.PROMPTS_SETTINGS, DEFAULT_PROMPTS_SETTINGS);
 			const tabOrder = GM_getValue(SETTING_KEYS.TAB_ORDER, DEFAULT_TAB_ORDER);
 
 			// 加载模型锁定设置（按站点隔离，但一次性加载所有站点的配置）
@@ -2367,12 +2803,19 @@
 				mergedModelLockConfig[currentSiteId] = { ...defaults, ...(savedModelLockSettings[currentSiteId] || {}) };
 			}
 
+			// 确保大纲设置有默认值
+			if (typeof outlineSettings.autoUpdate === 'undefined') outlineSettings.autoUpdate = true;
+			if (typeof outlineSettings.updateInterval === 'undefined') outlineSettings.updateInterval = 3;
+
 			return {
 				clearTextareaOnSend: GM_getValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, false), // 默认关闭
 				modelLockConfig: mergedModelLockConfig,
 				pageWidth: widthSettings[currentSiteId] || DEFAULT_WIDTH_SETTINGS[currentSiteId],
+				pageWidth: widthSettings[currentSiteId] || DEFAULT_WIDTH_SETTINGS[currentSiteId],
 				outline: outlineSettings,
-				tabOrder: tabOrder
+				prompts: promptsSettings,
+				tabOrder: tabOrder,
+				preventAutoScroll: GM_getValue('gemini_prevent_auto_scroll', false)
 			};
 		}
 
@@ -2389,8 +2832,12 @@
 			GM_setValue(SETTING_KEYS.PAGE_WIDTH, allWidthSettings);
 			// 保存大纲设置
 			GM_setValue(SETTING_KEYS.OUTLINE, this.settings.outline);
+			// 保存提示词设置
+			GM_setValue(SETTING_KEYS.PROMPTS_SETTINGS, this.settings.prompts);
 			// 保存 Tab 顺序
 			GM_setValue(SETTING_KEYS.TAB_ORDER, this.settings.tabOrder);
+			// 保存防滚动设置
+			GM_setValue('gemini_prevent_auto_scroll', this.settings.preventAutoScroll);
 		}
 
 		addPrompt(prompt) {
@@ -2447,6 +2894,11 @@
 					modelLockConfig: this.settings.modelLockConfig[currentSiteId]
 				};
 				this.siteAdapter.afterPropertiesSet(adapterOptions);
+				// 重新应用滚动锁定状态
+				if (this.scrollLockManager) {
+					this.scrollLockManager.siteAdapter = this.siteAdapter; // 确保适配器更新
+					this.scrollLockManager.setEnabled(this.settings.preventAutoScroll);
+				}
 
 				// 重新应用宽度样式 (防止页面重置)
 				if (this.widthStyleManager) {
@@ -2458,6 +2910,11 @@
 			// 创建并应用页面宽度样式
 			this.widthStyleManager = new WidthStyleManager(this.siteAdapter, this.settings.pageWidth);
 			this.widthStyleManager.apply();
+
+			// 监听自定义大纲自动刷新事件
+			window.addEventListener('gemini-helper-outline-auto-refresh', () => {
+				this.refreshOutline();
+			});
 
 			// 如果初始 Tab 是大纲，立即刷新内容
 			if (this.currentTab === 'outline') {
@@ -2887,6 +3344,10 @@
 				if (tabId === 'outline' && !this.settings.outline?.enabled) {
 					className += ' hidden';
 				}
+				// 提示词特殊显隐逻辑
+				if (tabId === 'prompts' && !this.settings.prompts?.enabled) {
+					className += ' hidden';
+				}
 
 				const btn = createElement('button', {
 					className: className,
@@ -3012,6 +3473,11 @@
 			document.getElementById('outline-content')?.classList.toggle('hidden', tabName !== 'outline');
 			document.getElementById('settings-content')?.classList.toggle('hidden', tabName !== 'settings');
 
+			// 通知 OutlineManager 激活状态（用于控制自动更新显隐）
+			if (this.outlineManager) {
+				this.outlineManager.setActive(tabName === 'outline');
+			}
+
 			// 更新刷新按钮的提示
 			const refreshBtn = document.getElementById('refresh-prompts');
 			if (refreshBtn) {
@@ -3131,6 +3597,9 @@
 			langItem.appendChild(langInfo);
 			langItem.appendChild(langSelect);
 			langSection.appendChild(langItem);
+
+
+
 			content.appendChild(langSection);
 
 
@@ -3321,17 +3790,55 @@
 					outlineToggle.addEventListener('click', (e) => {
 						e.stopPropagation();
 						this.settings.outline.enabled = !this.settings.outline.enabled;
+						outlineToggle.title = this.settings.outline.enabled ? '禁用大纲' : '启用大纲';
 						outlineToggle.classList.toggle('active', this.settings.outline.enabled);
 						this.saveSettings();
 
 						const outlineTab = document.getElementById('outline-tab');
 						if (outlineTab) outlineTab.classList.toggle('hidden', !this.settings.outline.enabled);
 
-						if (!this.settings.outline.enabled && this.currentTab === 'outline') this.switchTab('prompts');
+						if (!this.settings.outline.enabled && this.currentTab === 'outline') this.switchTab('settings');
+
+						// 更新自动更新状态
+						if (this.outlineManager) {
+							this.outlineManager.updateAutoUpdateState();
+						}
 
 						this.showToast(this.settings.outline.enabled ? this.t('settingOn') : this.t('settingOff'));
 					});
 					controls.appendChild(outlineToggle);
+				}
+
+				// 特殊处理：如果是提示词 Tab，在排序按钮旁边添加开关
+				if (tabId === 'prompts') {
+					const promptsToggle = createElement('div', {
+						className: 'setting-toggle' + (this.settings.prompts?.enabled ? ' active' : ''),
+						id: 'toggle-prompts-inline',
+						style: 'transform: scale(0.8); margin-right: 12px;',
+						title: '启用/禁用提示词'
+					});
+					promptsToggle.addEventListener('click', (e) => {
+						e.stopPropagation();
+						this.settings.prompts.enabled = !this.settings.prompts.enabled;
+						promptsToggle.classList.toggle('active', this.settings.prompts.enabled);
+						this.saveSettings();
+
+						const promptsTab = document.getElementById('prompts-tab');
+						if (promptsTab) promptsTab.classList.toggle('hidden', !this.settings.prompts.enabled);
+
+						if (!this.settings.prompts.enabled && this.currentTab === 'prompts') this.switchTab('settings');
+
+						this.showToast(this.settings.prompts.enabled ? this.t('settingOn') : this.t('settingOff'));
+					});
+					controls.appendChild(promptsToggle);
+				}
+
+				// 大纲高级设置（如果是在大纲 Tab 行）
+				if (tabId === 'outline') {
+					// 插入大纲高级设置的可折叠区域到下面（或者作为子项）
+					// 为保持 UI 简洁，我们可以在点击大纲 toggle 时不做额外展示，而是有一个专门的“大纲高级设置”区域
+					// 由于这里是排序拖拽区，不适合放太多配置。
+					// 决定：在排序列表下方新增一个独立的大纲设置区域
 				}
 
 				const upBtn = createElement('button', {
@@ -3396,12 +3903,90 @@
 			const layoutSection = this.createCollapsibleSection(this.t('tabOrderSettings'), layoutContainer);
 			content.appendChild(layoutSection);
 
+			// 5. 大纲详细设置 (高级配置)
+			const outlineSettingsContainer = createElement('div', {});
 
-			// 6. Gemini Business 专属设置
+			// 自动更新开关
+			const autoUpdateItem = createElement('div', { className: 'setting-item' });
+			const autoUpdateInfo = createElement('div', { className: 'setting-item-info' });
+			autoUpdateInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '对话期间自动更新大纲'));
+			autoUpdateInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, 'AI 生成内容时自动刷新目录结构'));
+
+			const autoUpdateToggle = createElement('div', {
+				className: 'setting-toggle' + (this.settings.outline.autoUpdate ? ' active' : ''),
+				id: 'toggle-outline-auto-update'
+			});
+			autoUpdateToggle.addEventListener('click', () => {
+				this.settings.outline.autoUpdate = !this.settings.outline.autoUpdate;
+				autoUpdateToggle.classList.toggle('active', this.settings.outline.autoUpdate);
+				this.saveSettings();
+				if (this.outlineManager) this.outlineManager.updateAutoUpdateState();
+				this.showToast(this.settings.outline.autoUpdate ? this.t('settingOn') : this.t('settingOff'));
+			});
+			autoUpdateItem.appendChild(autoUpdateInfo);
+			autoUpdateItem.appendChild(autoUpdateToggle);
+			outlineSettingsContainer.appendChild(autoUpdateItem);
+
+			// 更新间隔
+			const updateIntervalItem = createElement('div', { className: 'setting-item' });
+			const updateIntervalInfo = createElement('div', { className: 'setting-item-info' });
+			updateIntervalInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '更新检测间隔 (秒)'));
+			const updateIntervalControls = createElement('div', { className: 'setting-controls' });
+			const updateIntervalInput = createElement('input', {
+				type: 'number',
+				className: 'setting-select',
+				value: this.settings.outline.updateInterval,
+				style: 'width: 60px !important; text-align: center;',
+				min: 1
+			});
+			updateIntervalInput.addEventListener('change', () => {
+				let val = parseInt(updateIntervalInput.value, 10);
+				if (val < 1) val = 1; // 最小 1 秒
+				updateIntervalInput.value = val;
+				this.settings.outline.updateInterval = val;
+				this.saveSettings();
+				// OutlineManager 在触发下一次更新时会自动使用新间隔
+				this.showToast(`间隔已设为 ${val} 秒`);
+			});
+			updateIntervalControls.appendChild(updateIntervalInput);
+			updateIntervalItem.appendChild(updateIntervalInfo);
+			updateIntervalItem.appendChild(updateIntervalControls);
+			outlineSettingsContainer.appendChild(updateIntervalItem);
+
+			const outlineSettingsSection = this.createCollapsibleSection('大纲高级设置', outlineSettingsContainer, { defaultExpanded: false });
+			content.appendChild(outlineSettingsSection);
+
+
+			// 6. 其他设置 (折叠面板)
+			const otherSettingsContainer = createElement('div', {});
+
+			// 防止自动滚动开关
+			const scrollLockItem = createElement('div', { className: 'setting-item' });
+			const scrollLockInfo = createElement('div', { className: 'setting-item-info' });
+			scrollLockInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '防止自动滚动'));
+			scrollLockInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, '当 AI 生成长内容时，阻止页面自动滚动到底部，方便阅读上文'));
+
+			const scrollLockToggle = createElement('div', {
+				className: 'setting-toggle' + (this.settings.preventAutoScroll ? ' active' : ''),
+				id: 'toggle-scroll-lock'
+			});
+			scrollLockToggle.addEventListener('click', () => {
+				this.settings.preventAutoScroll = !this.settings.preventAutoScroll;
+				scrollLockToggle.classList.toggle('active', this.settings.preventAutoScroll);
+				this.saveSettings();
+				if (this.scrollLockManager) {
+					this.scrollLockManager.setEnabled(this.settings.preventAutoScroll);
+				}
+				this.showToast(this.settings.preventAutoScroll ? this.t('settingOn') : this.t('settingOff'));
+			});
+
+			scrollLockItem.appendChild(scrollLockInfo);
+			scrollLockItem.appendChild(scrollLockToggle);
+			otherSettingsContainer.appendChild(scrollLockItem);
+
+
+			// Gemini Business 专属设置
 			if (this.siteAdapter instanceof GeminiBusinessAdapter) {
-				const businessSection = createElement('div', { className: 'settings-section' });
-				businessSection.appendChild(createElement('div', { className: 'settings-section-title' }, this.siteAdapter.getName()));
-
 				const clearItem = createElement('div', { className: 'setting-item' });
 				const clearInfo = createElement('div', { className: 'setting-item-info' });
 				clearInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('clearOnSendLabel')));
@@ -3418,9 +4003,11 @@
 				});
 				clearItem.appendChild(clearInfo);
 				clearItem.appendChild(toggle);
-				businessSection.appendChild(clearItem);
-				content.appendChild(businessSection);
+				otherSettingsContainer.appendChild(clearItem);
 			}
+
+			const otherSettingsSection = this.createCollapsibleSection('其他设置', otherSettingsContainer, { defaultExpanded: false });
+			content.appendChild(otherSettingsSection);
 
 			container.appendChild(content);
 		}
