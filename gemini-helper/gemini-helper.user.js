@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.0
-// @description  Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
+// @version      1.7.1
+// @description  Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、模型自动锁定、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
+// @description:en Gemini Helper: Supports conversation outline (search/jump/detail), prompt management (category/group/drag), auto page width, auto model locking, Chinese input fix (Enterprise), multi-language support, smart adaptation for Gemini Standard/Enterprise/Genspark
 // @author       urzeye
 // @note         参考 https://linux.do/t/topic/925110 的代码与UI布局拓展实现
 // @match        https://gemini.google.com/*
@@ -39,6 +40,7 @@
 		PAGE_WIDTH: 'gemini_page_width',
 		OUTLINE: 'gemini_outline_settings',
 		TAB_ORDER: 'gemini_tab_order',
+		MODEL_LOCK: 'gemini_model_lock',
 	};
 
 	// 默认 Tab 顺序
@@ -96,6 +98,13 @@
 			clearOnSendDesc: '发送消息后插入零宽字符，修复下次输入首字母问题（仅 Gemini Business）',
 			settingOn: '开',
 			settingOff: '关',
+			// 模型锁定
+			modelLockTitle: '模型锁定',
+			modelLockLabel: '自动锁定模型',
+			modelLockDesc: '进入页面后自动切换到指定模型',
+			modelKeywordLabel: '模型关键字',
+			modelKeywordPlaceholder: '例如：3 Pro',
+			modelKeywordDesc: '用于匹配目标模型名称',
 			// 分类管理
 			categoryManage: '分类管理',
 			categoryEmpty: '暂无分类，添加提示词时会自动创建分类',
@@ -192,6 +201,13 @@
 			clearOnSendDesc: '發送訊息後插入零寬字元，修復下次輸入首字母問題（僅 Gemini Business）',
 			settingOn: '開',
 			settingOff: '關',
+			// 模型鎖定
+			modelLockTitle: '模型鎖定',
+			modelLockLabel: '自動鎖定模型',
+			modelLockDesc: '進入頁面後自動切換到指定模型',
+			modelKeywordLabel: '模型關鍵字',
+			modelKeywordPlaceholder: '例如：3 Pro',
+			modelKeywordDesc: '用於匹配目標模型名稱',
 			// 分類管理
 			categoryManage: '分類管理',
 			categoryEmpty: '暫無分類，新增提示詞時會自動建立分類',
@@ -288,6 +304,13 @@
 			clearOnSendDesc: 'Insert zero-width char after send to fix first letter issue (Gemini Business only)',
 			settingOn: 'ON',
 			settingOff: 'OFF',
+			// Model Lock
+			modelLockTitle: 'Model Lock',
+			modelLockLabel: 'Auto Lock Model',
+			modelLockDesc: 'Automatically switch to specified model upon entry',
+			modelKeywordLabel: 'Model Keyword',
+			modelKeywordPlaceholder: 'e.g., 3 Pro',
+			modelKeywordDesc: 'Used to match target model name',
 			// Category management
 			categoryManage: 'Category Management',
 			categoryEmpty: 'No categories yet. Categories are created when you add prompts.',
@@ -554,9 +577,15 @@
 
 		/**
 		 * 页面加载完成后执行
+		 * @param {Object} options - 配置项 { clearOnInit: boolean, lockModel: boolean }
 		 */
-		afterPropertiesSet() {
-
+		afterPropertiesSet(options = {}) {
+			const { modelLockConfig } = options;
+			// 默认初始化逻辑：如果有模型锁定配置且启用，尝试锁定模型
+			if (modelLockConfig && modelLockConfig.enabled) {
+				console.log(`[${this.getName()}] Triggering auto model lock:`, modelLockConfig.keyword);
+				this.lockModel(modelLockConfig.keyword);
+			}
 		}
 
 		/**
@@ -583,6 +612,259 @@
 		extractOutline(maxLevel = 6) {
 			return [];
 		}
+
+
+		// ============= 新对话监听 =============
+
+		/**
+		 * 获取“新对话”按钮的选择器列表
+		 * @returns {string[]}
+		 */
+		getNewChatButtonSelectors() {
+			return [];
+		}
+
+		/**
+		 * 绑定新对话触发事件（点击按钮或快捷键）
+		 * @param {Function} callback - 触发时的回调函数
+		 */
+		bindNewChatListeners(callback) {
+			// 1. 快捷键监听 (Ctrl + Shift + O)
+			document.addEventListener('keydown', (e) => {
+				if (e.ctrlKey && e.shiftKey && (e.key === 'o' || e.key === 'O')) {
+					console.log(`[${this.getName()}] New chat shortcut detected.`);
+					// 给予一点延迟等待页面响应
+					setTimeout(callback, 500);
+				}
+			});
+
+			// 2. 按钮点击监听
+			document.addEventListener('click', (e) => {
+				const selectors = this.getNewChatButtonSelectors();
+				if (selectors.length === 0) return;
+
+				// 使用 composedPath() 以支持 Shadow DOM 中的元素匹配
+				const path = e.composedPath();
+				for (const target of path) {
+					if (target === document || target === window) break;
+
+					for (const selector of selectors) {
+						if (target.matches && target.matches(selector)) {
+							console.log(`[${this.getName()}] New chat button clicked.`);
+							setTimeout(callback, 500);
+							return;
+						}
+					}
+				}
+			}, true); // 使用捕获阶段确保捕获
+		}
+
+		// ============= 模型锁定功能（抽象接口） =============
+
+		/**
+		 * 获取默认的模型锁定设置（每个站点可覆盖）
+		 * @returns {{ enabled: boolean, keyword: string }}
+		 */
+		getDefaultLockSettings() {
+			return { enabled: false, keyword: '' };
+		}
+
+		/**
+		 * 获取模型锁定配置
+		 * 子类需要覆盖此方法提供具体配置
+		 * @param {string} keyword - 目标模型关键字（由设置传入）
+		 * @returns {{
+		 *   targetModelKeyword: string,          // 目标模型名称关键字（用于匹配）
+		 *   selectorButtonSelectors: string[],   // 模型选择器按钮的 CSS 选择器列表
+		 *   menuItemSelector: string,            // 菜单项的 CSS 选择器
+		 *   checkInterval: number,               // 检查间隔（毫秒）
+		 *   maxAttempts: number,                 // 最大尝试次数
+		 *   menuRenderDelay: number              // 菜单渲染等待时间（毫秒）
+		 * }|null}
+		 */
+		getModelSwitcherConfig(keyword) {
+			return null;
+		}
+
+		/**
+		/**
+		 * 通用模型锁定实现
+		 * 基于 getModelSwitcherConfig() 返回的配置执行锁定逻辑
+		 * @param {string} keyword - 目标模型关键字
+		 * @param {Function} onSuccess 成功后的回调（可选）
+		 */
+		lockModel(keyword, onSuccess = null) {
+			const config = this.getModelSwitcherConfig(keyword);
+			if (!config) return;
+
+			const {
+				targetModelKeyword,
+				selectorButtonSelectors,
+				menuItemSelector,
+				checkInterval = 1500,
+				maxAttempts = 20,
+				menuRenderDelay = 500
+			} = config;
+
+			let attempts = 0;
+			let isSelecting = false;
+			// 辅助函数：标准化文本（小写 + 去空）
+			const normalize = str => (str || '').toLowerCase().trim();
+			const target = normalize(targetModelKeyword);
+
+			const timer = setInterval(() => {
+				attempts++;
+				if (attempts > maxAttempts) {
+					console.warn(`Gemini Helper: Model lock timed out for "${targetModelKeyword}"`);
+					clearInterval(timer);
+					return;
+				}
+
+				if (isSelecting) return;
+
+				// 1. 查找模型选择器按钮
+				const selectorBtn = this.findElementBySelectors(selectorButtonSelectors);
+				if (!selectorBtn) return;
+
+				// 2. 检查当前是否已经是目标模型（不区分大小写）
+				const currentText = selectorBtn.textContent || selectorBtn.innerText || '';
+				if (normalize(currentText).includes(target)) {
+					console.log(`Gemini Helper: Model is already locked to "${targetModelKeyword}"`);
+					clearInterval(timer);
+					if (onSuccess) onSuccess();
+					return;
+				}
+
+				// 3. 标记正在选择
+				isSelecting = true;
+
+				// 4. 点击展开菜单
+				selectorBtn.click();
+
+				// 5. 等待菜单渲染后查找并点击目标项
+				setTimeout(() => {
+					const menuItems = this.findAllElementsBySelector(menuItemSelector);
+
+					// 如果找到了菜单项，说明菜单已渲染
+					if (menuItems.length > 0) {
+						let found = false;
+
+						for (const item of menuItems) {
+							const itemText = item.textContent || item.innerText || '';
+							// 不区分大小写匹配
+							if (normalize(itemText).includes(target)) {
+								item.click();
+								found = true;
+								clearInterval(timer);
+								console.log(`Gemini Helper: Switched to model "${targetModelKeyword}"`);
+								// 延迟关闭菜单面板
+								setTimeout(() => {
+									document.body.click();
+									if (onSuccess) onSuccess();
+								}, 100);
+								break;
+							}
+						}
+
+						if (!found) {
+							// 菜单已打开但没有找到目标模型，停止重试以避免死循环闪烁
+							console.warn(`Gemini Helper: Target model "${targetModelKeyword}" not found in menu. Aborting.`);
+							clearInterval(timer); // 关键：停止定时器
+							document.body.click(); // 关闭菜单
+							isSelecting = false;
+						}
+					} else {
+						// 菜单可能未渲染或选择器不匹配，允许重试（直到超时）
+						isSelecting = false;
+						document.body.click(); // 尝试关闭以重置状态
+					}
+				}, menuRenderDelay);
+
+			}, checkInterval);
+		}
+
+		/**
+		 * 通过选择器列表查找单个元素（支持 Shadow DOM）
+		 * @param {string[]} selectors
+		 * @returns {Element|null}
+		 */
+		findElementBySelectors(selectors) {
+			// 1. 尝试全局直接查找
+			for (const selector of selectors) {
+				const el = document.querySelector(selector);
+				if (el) return el;
+			}
+
+			// 2. 深度 Shadow DOM 查找
+			return this.findInShadowRecursive(document, selectors);
+		}
+
+		/**
+		 * 通过选择器查找所有元素（支持 Shadow DOM）
+		 * @param {string} selector
+		 * @returns {Element[]}
+		 */
+		findAllElementsBySelector(selector) {
+			const items = [];
+
+			// 1. 尝试全局直接查找
+			const globalItems = document.querySelectorAll(selector);
+			if (globalItems.length > 0) {
+				return Array.from(globalItems);
+			}
+
+			// 2. 深度 Shadow DOM 查找
+			this.collectElementsInShadow(document, selector, items);
+			return items;
+		}
+
+		/**
+		 * 在 Shadow DOM 中递归查找元素（返回第一个匹配）
+		 */
+		findInShadowRecursive(root, selectors, depth = 0) {
+			if (depth > 15) return null;
+
+			if (root !== document) {
+				for (const selector of selectors) {
+					try {
+						const el = root.querySelector(selector);
+						if (el) return el;
+					} catch (e) { }
+				}
+			}
+
+			const allElements = root.querySelectorAll('*');
+			for (const el of allElements) {
+				if (el.shadowRoot) {
+					const found = this.findInShadowRecursive(el.shadowRoot, selectors, depth + 1);
+					if (found) return found;
+				}
+			}
+			return null;
+		}
+
+		/**
+		 * 在 Shadow DOM 中递归收集所有匹配元素
+		 */
+		collectElementsInShadow(root, selector, results, depth = 0) {
+			if (depth > 15) return;
+
+			if (root !== document) {
+				try {
+					const els = root.querySelectorAll(selector);
+					for (const el of els) {
+						results.push(el);
+					}
+				} catch (e) { }
+			}
+
+			const allElements = root.querySelectorAll('*');
+			for (const el of allElements) {
+				if (el.shadowRoot) {
+					this.collectElementsInShadow(el.shadowRoot, selector, results, depth + 1);
+				}
+			}
+		}
 	}
 
 	/**
@@ -600,6 +882,22 @@
 
 		getThemeColors() {
 			return { primary: '#4285f4', secondary: '#34a853' };
+		}
+
+		getNewChatButtonSelectors() {
+			return [
+				'.new-chat-button',
+				'.chat-history-new-chat-button',
+				'[aria-label="New chat"]',
+				'[aria-label="新对话"]',
+				'[aria-label="发起新对话"]',
+				'[data-testid="new-chat-button"]',
+				'[data-test-id="new-chat-button"]',
+				'[data-test-id="expanded-button"]',
+				// 临时对话按钮
+				'[data-test-id="temp-chat-button"]',
+				'button[aria-label="临时对话"]'
+			];
 		}
 
 		getWidthSelectors() {
@@ -701,6 +999,30 @@
 			return outline;
 		}
 
+
+		// ============= 模型锁定配置 =============
+		getDefaultLockSettings() {
+			return { enabled: false, keyword: '' };
+		}
+
+		getModelSwitcherConfig(keyword) {
+			return {
+				targetModelKeyword: keyword,
+				// 尝试匹配 Gemini 普通版的模型选择器
+				selectorButtonSelectors: [
+					'.input-area-switch-label',
+					'.model-selector',
+					'[data-test-id="model-selector"]',
+					'[aria-label*="model"]',
+					'button[aria-haspopup="menu"]'
+				],
+				menuItemSelector: '.mode-title, [role="menuitem"], [role="option"]',
+				checkInterval: 1000,
+				maxAttempts: 15,
+				menuRenderDelay: 300
+			};
+		}
+
 	}
 
 	/**
@@ -723,6 +1045,10 @@
 		shouldInjectIntoShadow(host) {
 			if (host.closest('mat-sidenav') || host.closest('mat-drawer') || host.closest('[class*="bg-sidebar"]')) return false;
 			return true;
+		}
+
+		getNewChatButtonSelectors() {
+			return ['.chat-button.list-item', 'button[aria-label="New chat"]', 'button[aria-label="新对话"]'];
 		}
 
 		getWidthSelectors() {
@@ -921,12 +1247,52 @@
 			}
 		}
 
-		afterPropertiesSet(clearOnInit = true) {
-			// fixed: gemini business 在使用中文输入时，首字母会自动转换为英文，多一个字母
-			// 根据 clearOnInit 参数决定是否在初始化时插入零宽字符
-			if (clearOnInit) {
+		afterPropertiesSet(options = {}) {
+			// 保存配置状态供其他方法使用
+			this.clearOnInit = options.clearOnInit;
+
+			// 1. 调用基类通用逻辑（处理模型锁定）
+			super.afterPropertiesSet(options);
+
+			// 2. 处理企业版特有的初始化清除（如果未启用模型锁定或模型已锁定，这里先执行一次以防万一）
+			// 注意：如果 trigger 了 lockModel，lockModel 回调里会再次执行。
+			if (this.clearOnInit) {
 				this.clearTextarea();
 			}
+		}
+
+		// 覆盖 lockModel 以处理锁定后的清理
+		lockModel(keyword, onSuccess = null) {
+			super.lockModel(keyword, () => {
+				// 执行传入的回调
+				if (onSuccess) onSuccess();
+
+				// 执行企业版特定的清理：锁定模型后，重新插入零宽字符修复中文输入
+				// 这里的延迟是为了等待 UI 刷新（切换模型会导致输入框重建或重置）
+				if (this.clearOnInit) {
+					setTimeout(() => this.clearTextarea(), 300);
+				}
+			});
+		}
+
+
+		// ============= 模型锁定配置 =============
+
+
+
+		getDefaultLockSettings() {
+			return { enabled: true, keyword: '3 Pro' };
+		}
+
+		getModelSwitcherConfig(keyword) {
+			return {
+				targetModelKeyword: keyword || '3 Pro',
+				selectorButtonSelectors: ['#model-selector-menu-anchor', '.action-model-selector'],
+				menuItemSelector: 'md-menu-item',
+				checkInterval: 1500,
+				maxAttempts: 20,
+				menuRenderDelay: 500
+			};
 		}
 
 		getResponseContainerSelector() {
@@ -1076,8 +1442,8 @@
 
 	// ==================== 核心逻辑 ====================
 
-	// 安全的 HTML 创建函数
-	function createElementSafely(tag, properties = {}, textContent = '') {
+	// HTML 创建函数
+	function createElement(tag, properties = {}, textContent = '') {
 		const element = document.createElement(tag);
 		Object.keys(properties).forEach(key => {
 			if (key === 'className') {
@@ -1092,8 +1458,8 @@
 		return element;
 	}
 
-	// 安全清空元素内容
-	function clearElementSafely(element) {
+	// 清空元素内容
+	function clearElement(element) {
 		while (element.firstChild) {
 			element.removeChild(element.firstChild);
 		}
@@ -1302,18 +1668,18 @@
 
 		createUI() {
 			const container = this.container;
-			clearElementSafely(container);
+			clearElement(container);
 
-			const content = createElementSafely('div', { className: 'outline-content' });
+			const content = createElement('div', { className: 'outline-content' });
 
 			// 固定工具栏
-			const toolbar = createElementSafely('div', { className: 'outline-fixed-toolbar' });
+			const toolbar = createElement('div', { className: 'outline-fixed-toolbar' });
 
 			// 第一行：按钮和搜索占位
-			const row1 = createElementSafely('div', { className: 'outline-toolbar-row' });
+			const row1 = createElement('div', { className: 'outline-toolbar-row' });
 
 			// 滚动按钮
-			const scrollBtn = createElementSafely('button', {
+			const scrollBtn = createElement('button', {
 				className: 'outline-toolbar-btn',
 				id: 'outline-scroll-btn',
 				title: this.t('outlineScrollBottom')
@@ -1322,7 +1688,7 @@
 			row1.appendChild(scrollBtn);
 
 			// 展开/折叠按钮
-			const expandBtn = createElementSafely('button', {
+			const expandBtn = createElement('button', {
 				className: 'outline-toolbar-btn',
 				id: 'outline-expand-btn',
 				title: this.t('outlineExpandAll')
@@ -1331,16 +1697,16 @@
 			row1.appendChild(expandBtn);
 
 			// 搜索框区域
-			const searchWrapper = createElementSafely('div', { className: 'outline-search-wrapper' });
+			const searchWrapper = createElement('div', { className: 'outline-search-wrapper' });
 
-			const searchInput = createElementSafely('input', {
+			const searchInput = createElement('input', {
 				type: 'text',
 				className: 'outline-search-input',
 				placeholder: this.t('outlineSearch'),
 				value: this.state.searchQuery
 			});
 
-			const clearBtn = createElementSafely('button', {
+			const clearBtn = createElement('button', {
 				className: 'outline-search-clear hidden',
 				title: this.t('clear')
 			}, '×');
@@ -1380,23 +1746,23 @@
 			toolbar.appendChild(row1);
 
 			// 第二行：层级滑块
-			const row2 = createElementSafely('div', { className: 'outline-toolbar-row' });
-			const sliderContainer = createElementSafely('div', { className: 'outline-level-slider-container' });
+			const row2 = createElement('div', { className: 'outline-toolbar-row' });
+			const sliderContainer = createElement('div', { className: 'outline-level-slider-container' });
 
 			// 层级节点
-			const dotsContainer = createElementSafely('div', { className: 'outline-level-dots', id: 'outline-level-dots' });
-			const levelLine = createElementSafely('div', { className: 'outline-level-line' });
-			const levelProgress = createElementSafely('div', { className: 'outline-level-progress', id: 'outline-level-progress' });
+			const dotsContainer = createElement('div', { className: 'outline-level-dots', id: 'outline-level-dots' });
+			const levelLine = createElement('div', { className: 'outline-level-line' });
+			const levelProgress = createElement('div', { className: 'outline-level-progress', id: 'outline-level-progress' });
 			levelLine.appendChild(levelProgress);
 			dotsContainer.appendChild(levelLine);
 
 			// 创建 6 个层级节点（0 表示不展开，1-6 表示层级）
 			for (let i = 0; i <= 6; i++) {
-				const dot = createElementSafely('div', {
+				const dot = createElement('div', {
 					className: `outline-level-dot ${i <= (this.state.expandLevel) ? 'active' : ''}`,
 					'data-level': i
 				});
-				const tooltip = createElementSafely('div', { className: 'outline-level-dot-tooltip' });
+				const tooltip = createElement('div', { className: 'outline-level-dot-tooltip' });
 				if (i === 0) {
 					tooltip.textContent = '⊖'; // 不展开
 				} else {
@@ -1413,15 +1779,15 @@
 			content.appendChild(toolbar);
 
 			// 搜索结果统计条 (插入在工具栏和列表之间)
-			const resultBar = createElementSafely('div', {
+			const resultBar = createElement('div', {
 				className: 'outline-result-bar hidden',
 				id: 'outline-result-bar'
 			});
 			content.appendChild(resultBar);
 
 			// 大纲列表包装器（可滚动）
-			const listWrapper = createElementSafely('div', { className: 'outline-list-wrapper', id: 'outline-list-wrapper' });
-			const list = createElementSafely('div', { className: 'outline-list', id: 'outline-list' });
+			const listWrapper = createElement('div', { className: 'outline-list-wrapper', id: 'outline-list-wrapper' });
+			const list = createElement('div', { className: 'outline-list', id: 'outline-list' });
 			listWrapper.appendChild(list);
 			content.appendChild(listWrapper);
 
@@ -1433,10 +1799,10 @@
 			const listContainer = document.getElementById('outline-list');
 			if (!listContainer) return;
 
-			clearElementSafely(listContainer);
+			clearElement(listContainer);
 
 			if (!outlineData || outlineData.length === 0) {
-				listContainer.appendChild(createElementSafely('div', { className: 'outline-empty' }, this.t('outlineEmpty')));
+				listContainer.appendChild(createElement('div', { className: 'outline-empty' }, this.t('outlineEmpty')));
 				return;
 			}
 
@@ -1581,7 +1947,7 @@
 		refreshCurrent() {
 			const listContainer = document.getElementById('outline-list');
 			if (this.state.tree && listContainer) {
-				clearElementSafely(listContainer);
+				clearElement(listContainer);
 
 				// 确定当前的显示层级上限
 				// 如果在搜索模式且未手动调整，显示所有层级 (Infinity)
@@ -1677,14 +2043,14 @@
 				// 最终修正：如果父级折叠了，那肯定看不到
 				if (parentCollapsed) shouldShow = false;
 
-				const itemEl = createElementSafely('div', {
+				const itemEl = createElement('div', {
 					className: `outline-item outline-level-${item.relativeLevel}`,
 					'data-index': item.index,
 					'data-level': item.relativeLevel
 				});
 
 				const isExpanded = hasChildren && !item.collapsed;
-				const toggle = createElementSafely('span', {
+				const toggle = createElement('span', {
 					className: `outline-item-toggle ${hasChildren ? (isExpanded ? 'expanded' : '') : 'invisible'}`
 				}, '▸');
 
@@ -1701,7 +2067,7 @@
 				}
 				itemEl.appendChild(toggle);
 
-				const textEl = createElementSafely('span', { className: 'outline-item-text' });
+				const textEl = createElement('span', { className: 'outline-item-text' });
 
 				// 高亮处理
 				if (this.state.searchQuery && item.isMatch) {
@@ -1924,16 +2290,20 @@
 		}
 	}
 
+
+
 	/**
 	 * Gemini 助手核心类
 	 * 管理提示词、设置和 UI 界面
 	 */
 	class GeminiHelper {
-		constructor(siteAdapter) {
+		constructor(siteRegistry) {
 			this.prompts = this.loadPrompts();
+			this.registry = siteRegistry;
+			// 保持 siteAdapter 引用以便兼容旧代码，指向当前匹配的站点
+			this.siteAdapter = siteRegistry.getCurrent();
 			this.selectedPrompt = null;
 			this.isCollapsed = false;
-			this.siteAdapter = siteAdapter;
 			this.isScrolling = false; // 滚动状态锁
 			this.lang = detectLanguage(); // 当前语言
 			this.i18n = I18N[this.lang]; // 当前语言文本
@@ -1977,9 +2347,30 @@
 			const outlineSettings = GM_getValue(SETTING_KEYS.OUTLINE, DEFAULT_OUTLINE_SETTINGS);
 			const tabOrder = GM_getValue(SETTING_KEYS.TAB_ORDER, DEFAULT_TAB_ORDER);
 
+			// 加载模型锁定设置（按站点隔离，但一次性加载所有站点的配置）
+			const savedModelLockSettings = GM_getValue(SETTING_KEYS.MODEL_LOCK, {});
+			const mergedModelLockConfig = {};
+
+			// 兼容旧的单一适配器模式（防御性代码）
+			const currentAdapter = this.siteAdapter || (this.registry ? this.registry.getCurrent() : null);
+			const currentSiteId = currentAdapter ? currentAdapter.getSiteId() : 'unknown';
+
+			// 遍历所有注册的适配器，合并默认配置和保存的配置
+			if (this.registry && this.registry.adapters) {
+				this.registry.adapters.forEach(adapter => {
+					const siteId = adapter.getSiteId();
+					const defaults = adapter.getDefaultLockSettings();
+					mergedModelLockConfig[siteId] = { ...defaults, ...(savedModelLockSettings[siteId] || {}) };
+				});
+			} else if (currentAdapter) {
+				const defaults = currentAdapter.getDefaultLockSettings();
+				mergedModelLockConfig[currentSiteId] = { ...defaults, ...(savedModelLockSettings[currentSiteId] || {}) };
+			}
+
 			return {
 				clearTextareaOnSend: GM_getValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, false), // 默认关闭
-				pageWidth: widthSettings[this.siteAdapter.getSiteId()] || DEFAULT_WIDTH_SETTINGS[this.siteAdapter.getSiteId()],
+				modelLockConfig: mergedModelLockConfig,
+				pageWidth: widthSettings[currentSiteId] || DEFAULT_WIDTH_SETTINGS[currentSiteId],
 				outline: outlineSettings,
 				tabOrder: tabOrder
 			};
@@ -1988,6 +2379,10 @@
 		// 保存设置
 		saveSettings() {
 			GM_setValue(SETTING_KEYS.CLEAR_TEXTAREA_ON_SEND, this.settings.clearTextareaOnSend);
+
+			// 保存模型锁定设置（保存整个字典）
+			GM_setValue(SETTING_KEYS.MODEL_LOCK, this.settings.modelLockConfig);
+
 			// 保存页面宽度设置
 			const allWidthSettings = GM_getValue(SETTING_KEYS.PAGE_WIDTH, DEFAULT_WIDTH_SETTINGS);
 			allWidthSettings[this.siteAdapter.getSiteId()] = this.settings.pageWidth;
@@ -2036,10 +2431,30 @@
 			this.bindEvents();
 			this.siteAdapter.findTextarea();
 			// 对于 Gemini Business，根据设置决定是否在初始化时插入零宽字符
-			const shouldClearOnInit = this.siteAdapter instanceof GeminiBusinessAdapter
-				? this.settings.clearTextareaOnSend
-				: false;
-			this.siteAdapter.afterPropertiesSet(shouldClearOnInit);
+			const currentSiteId = this.siteAdapter.getSiteId();
+			const adapterOptions = {
+				clearOnInit: this.siteAdapter instanceof GeminiBusinessAdapter ? this.settings.clearTextareaOnSend : false,
+				modelLockConfig: this.settings.modelLockConfig[currentSiteId] // 传递当前站点的配置
+			};
+			// 绑定新对话监听 (点击按钮或快捷键)
+			this.siteAdapter.bindNewChatListeners(() => {
+				console.log('Gemini Helper: New chat detected, re-initializing...');
+				// 重新加载配置并执行初始化逻辑
+				this.settings = this.loadSettings();
+				const currentSiteId = this.siteAdapter.getSiteId();
+				const adapterOptions = {
+					clearOnInit: this.siteAdapter instanceof GeminiBusinessAdapter ? this.settings.clearTextareaOnSend : false,
+					modelLockConfig: this.settings.modelLockConfig[currentSiteId]
+				};
+				this.siteAdapter.afterPropertiesSet(adapterOptions);
+
+				// 重新应用宽度样式 (防止页面重置)
+				if (this.widthStyleManager) {
+					this.widthStyleManager.apply();
+				}
+			});
+
+			this.siteAdapter.afterPropertiesSet(adapterOptions);
 			// 创建并应用页面宽度样式
 			this.widthStyleManager = new WidthStyleManager(this.siteAdapter, this.settings.pageWidth);
 			this.widthStyleManager.apply();
@@ -2155,6 +2570,7 @@
                     display: flex; align-items: center; justify-content: center; z-index: 1000000; animation: fadeIn 0.2s;
                 }
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
                 .prompt-modal-content {
                     background: white; border-radius: 12px; width: 90%; max-width: 500px; padding: 24px; animation: slideUp 0.3s;
                 }
@@ -2430,18 +2846,18 @@
 			if (existingBar) existingBar.remove();
 			if (existingBtn) existingBtn.remove();
 
-			const panel = createElementSafely('div', { id: 'gemini-helper-panel' });
+			const panel = createElement('div', { id: 'gemini-helper-panel' });
 
 			// Header
-			const header = createElementSafely('div', { className: 'prompt-panel-header' });
-			const title = createElementSafely('div', { className: 'prompt-panel-title' });
-			title.appendChild(createElementSafely('span', {}, '✨'));
-			title.appendChild(createElementSafely('span', {}, this.t('panelTitle')));
-			title.appendChild(createElementSafely('span', { className: 'site-indicator' }, this.siteAdapter.getName()));
+			const header = createElement('div', { className: 'prompt-panel-header' });
+			const title = createElement('div', { className: 'prompt-panel-title' });
+			title.appendChild(createElement('span', {}, '✨'));
+			title.appendChild(createElement('span', {}, this.t('panelTitle')));
+			title.appendChild(createElement('span', { className: 'site-indicator' }, this.siteAdapter.getName()));
 
-			const controls = createElementSafely('div', { className: 'prompt-panel-controls' });
-			const refreshBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: this.t('refreshPrompts') }, '⟳');
-			const toggleBtn = createElementSafely('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: this.t('collapse') }, '−');
+			const controls = createElement('div', { className: 'prompt-panel-controls' });
+			const refreshBtn = createElement('button', { className: 'prompt-panel-btn', id: 'refresh-prompts', title: this.t('refreshPrompts') }, '⟳');
+			const toggleBtn = createElement('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: this.t('collapse') }, '−');
 			controls.appendChild(refreshBtn);
 			controls.appendChild(toggleBtn);
 
@@ -2449,7 +2865,7 @@
 			header.appendChild(controls);
 
 			// Tab 栏
-			const tabs = createElementSafely('div', { className: 'prompt-panel-tabs' });
+			const tabs = createElement('div', { className: 'prompt-panel-tabs' });
 
 			// 根据设置的顺序渲染 Tab
 			const tabOrder = this.settings.tabOrder || DEFAULT_TAB_ORDER;
@@ -2472,14 +2888,14 @@
 					className += ' hidden';
 				}
 
-				const btn = createElementSafely('button', {
+				const btn = createElement('button', {
 					className: className,
 					'data-tab': tabId,
 					id: `${tabId}-tab`
 				});
 
 				// 添加图标和文本
-				btn.appendChild(createElementSafely('span', { style: 'margin-right: 6px;' }, def.icon));
+				btn.appendChild(createElement('span', { style: 'margin-right: 6px;' }, def.icon));
 				btn.appendChild(document.createTextNode(this.t(def.labelKey)));
 
 				btn.addEventListener('click', () => this.switchTab(tabId));
@@ -2491,21 +2907,21 @@
 
 			// 内容容器需按固定顺序创建（DOM 结构不受 Tab 顺序影响，只影响 Tab 按钮顺序）
 			// 1. 提示词面板内容区
-			const promptsContent = createElementSafely('div', {
+			const promptsContent = createElement('div', {
 				className: `prompt-panel-content${this.currentTab === 'prompts' ? '' : ' hidden'}`,
 				id: 'prompts-content'
 			});
 
-			const searchBar = createElementSafely('div', { className: 'prompt-search-bar' });
-			const searchInput = createElementSafely('input', { className: 'prompt-search-input', id: 'prompt-search', type: 'text', placeholder: this.t('searchPlaceholder') });
+			const searchBar = createElement('div', { className: 'prompt-search-bar' });
+			const searchInput = createElement('input', { className: 'prompt-search-input', id: 'prompt-search', type: 'text', placeholder: this.t('searchPlaceholder') });
 			searchBar.appendChild(searchInput);
 
-			const categories = createElementSafely('div', { className: 'prompt-categories', id: 'prompt-categories' });
-			const list = createElementSafely('div', { className: 'prompt-list', id: 'prompt-list' });
+			const categories = createElement('div', { className: 'prompt-categories', id: 'prompt-categories' });
+			const list = createElement('div', { className: 'prompt-list', id: 'prompt-list' });
 
-			const addBtn = createElementSafely('button', { className: 'add-prompt-btn', id: 'add-prompt' });
-			addBtn.appendChild(createElementSafely('span', {}, '+'));
-			addBtn.appendChild(createElementSafely('span', {}, this.t('addPrompt')));
+			const addBtn = createElement('button', { className: 'add-prompt-btn', id: 'add-prompt' });
+			addBtn.appendChild(createElement('span', {}, '+'));
+			addBtn.appendChild(createElement('span', {}, this.t('addPrompt')));
 
 			promptsContent.appendChild(searchBar);
 			promptsContent.appendChild(categories);
@@ -2515,7 +2931,7 @@
 
 
 			// 2. 大纲面板内容区
-			const outlineContent = createElementSafely('div', {
+			const outlineContent = createElement('div', {
 				className: `prompt-panel-content${this.currentTab === 'outline' ? '' : ' hidden'}`,
 				id: 'outline-content'
 			});
@@ -2530,7 +2946,7 @@
 
 
 			// 3. 设置面板内容区
-			const settingsContent = createElementSafely('div', {
+			const settingsContent = createElement('div', {
 				className: `prompt-panel-content${this.currentTab === 'settings' ? '' : ' hidden'}`,
 				id: 'settings-content'
 			});
@@ -2544,18 +2960,18 @@
 			document.body.appendChild(panel);
 
 			// 选中提示词悬浮条
-			const selectedBar = createElementSafely('div', { className: 'selected-prompt-bar', style: 'user-select: none;' });
-			selectedBar.appendChild(createElementSafely('span', { style: 'user-select: none;' }, this.t('currentPrompt')));
-			selectedBar.appendChild(createElementSafely('span', { className: 'selected-prompt-text', id: 'selected-prompt-text', style: 'user-select: none;' }));
-			const clearBtn = createElementSafely('button', { className: 'clear-prompt-btn', id: 'clear-prompt' }, '×');
+			const selectedBar = createElement('div', { className: 'selected-prompt-bar', style: 'user-select: none;' });
+			selectedBar.appendChild(createElement('span', { style: 'user-select: none;' }, this.t('currentPrompt')));
+			selectedBar.appendChild(createElement('span', { className: 'selected-prompt-text', id: 'selected-prompt-text', style: 'user-select: none;' }));
+			const clearBtn = createElement('button', { className: 'clear-prompt-btn', id: 'clear-prompt' }, '×');
 			selectedBar.appendChild(clearBtn);
 			document.body.appendChild(selectedBar);
 
 			// 快捷按钮组（收起时显示）
-			const quickBtnGroup = createElementSafely('div', { className: 'quick-btn-group hidden', id: 'quick-btn-group' });
-			const quickBtn = createElementSafely('button', { className: 'quick-prompt-btn', title: this.t('panelTitle') }, '✨');
-			const quickScrollTop = createElementSafely('button', { className: 'quick-prompt-btn', title: this.t('scrollTop') }, '⬆');
-			const quickScrollBottom = createElementSafely('button', { className: 'quick-prompt-btn', title: this.t('scrollBottom') }, '⬇');
+			const quickBtnGroup = createElement('div', { className: 'quick-btn-group hidden', id: 'quick-btn-group' });
+			const quickBtn = createElement('button', { className: 'quick-prompt-btn', title: this.t('panelTitle') }, '✨');
+			const quickScrollTop = createElement('button', { className: 'quick-prompt-btn', title: this.t('scrollTop') }, '⬆');
+			const quickScrollBottom = createElement('button', { className: 'quick-prompt-btn', title: this.t('scrollBottom') }, '⬇');
 			quickBtn.addEventListener('click', () => { this.togglePanel(); });
 			quickScrollTop.addEventListener('click', () => this.scrollToTop());
 			quickScrollBottom.addEventListener('click', () => this.scrollToBottom());
@@ -2565,13 +2981,13 @@
 			document.body.appendChild(quickBtnGroup);
 
 			// 快捷跳转按钮组 - 放在面板底部
-			const scrollNavContainer = createElementSafely('div', { className: 'scroll-nav-container', id: 'scroll-nav-container' });
-			const scrollTopBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-top-btn', title: this.t('scrollTop') });
-			scrollTopBtn.appendChild(createElementSafely('span', {}, '⬆'));
-			scrollTopBtn.appendChild(createElementSafely('span', {}, this.t('scrollTop')));
-			const scrollBottomBtn = createElementSafely('button', { className: 'scroll-nav-btn', id: 'scroll-bottom-btn', title: this.t('scrollBottom') });
-			scrollBottomBtn.appendChild(createElementSafely('span', {}, '⬇'));
-			scrollBottomBtn.appendChild(createElementSafely('span', {}, this.t('scrollBottom')));
+			const scrollNavContainer = createElement('div', { className: 'scroll-nav-container', id: 'scroll-nav-container' });
+			const scrollTopBtn = createElement('button', { className: 'scroll-nav-btn', id: 'scroll-top-btn', title: this.t('scrollTop') });
+			scrollTopBtn.appendChild(createElement('span', {}, '⬆'));
+			scrollTopBtn.appendChild(createElement('span', {}, this.t('scrollTop')));
+			const scrollBottomBtn = createElement('button', { className: 'scroll-nav-btn', id: 'scroll-bottom-btn', title: this.t('scrollBottom') });
+			scrollBottomBtn.appendChild(createElement('span', {}, '⬇'));
+			scrollBottomBtn.appendChild(createElement('span', {}, this.t('scrollBottom')));
 			scrollTopBtn.addEventListener('click', () => this.scrollToTop());
 			scrollBottomBtn.addEventListener('click', () => this.scrollToBottom());
 			scrollNavContainer.appendChild(scrollTopBtn);
@@ -2622,21 +3038,74 @@
 			}
 		}
 
+
+		// 创建可折叠区域辅助方法
+		createCollapsibleSection(title, content, options = {}) {
+			const { defaultExpanded = false } = options;
+			const section = createElement('div', { className: 'settings-section' });
+
+			// 标题栏（可点击折叠/展开）
+			const header = createElement('div', {
+				className: 'settings-section-title',
+				style: 'cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none;'
+			});
+
+			const headerLeft = createElement('div', { style: 'display: flex; align-items: center; gap: 6px;' });
+			// 箭头
+			const arrow = createElement('span', {
+				style: 'font-size: 10px; color: #9ca3af; transition: transform 0.2s; display: inline-block;',
+				className: 'collapse-arrow'
+			}, '▶');
+
+			const headerTitle = createElement('span', {}, title);
+			headerLeft.appendChild(arrow);
+			headerLeft.appendChild(headerTitle);
+
+			header.appendChild(headerLeft);
+			// 如果有右侧元素（如开关状态提示等），可以扩展 options 传入，这里暂时留空
+
+			section.appendChild(header);
+
+			// 内容容器
+			const contentContainer = createElement('div', {
+				className: 'settings-accordion-content',
+				style: `display: ${defaultExpanded ? 'block' : 'none'}; padding-top: 8px; animation: slideDown 0.2s;`
+			});
+			contentContainer.appendChild(content);
+
+			// 切换折叠状态
+			let isExpanded = defaultExpanded;
+			const updateState = () => {
+				contentContainer.style.display = isExpanded ? 'block' : 'none';
+				arrow.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
+			};
+			// 初始化状态
+			if (defaultExpanded) arrow.style.transform = 'rotate(90deg)';
+
+
+			header.addEventListener('click', () => {
+				isExpanded = !isExpanded;
+				updateState();
+			});
+
+			section.appendChild(contentContainer);
+			return section;
+		}
+
 		// 创建设置面板内容
 		createSettingsContent(container) {
-			const content = createElementSafely('div', { className: 'settings-content' });
+			const content = createElement('div', { className: 'settings-content' });
 
-			// 通用设置区：语言选择
-			const generalSection = createElementSafely('div', { className: 'settings-section' });
-			generalSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('settingsTitle')));
+			// 1. 语言设置 (保持在顶部)
+			const langSection = createElement('div', { className: 'settings-section' });
+			langSection.appendChild(createElement('div', { className: 'settings-section-title' }, this.t('settingsTitle')));
 
-			// 语言选择项
-			const langItem = createElementSafely('div', { className: 'setting-item' });
-			const langInfo = createElementSafely('div', { className: 'setting-item-info' });
-			langInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('languageLabel')));
-			langInfo.appendChild(createElementSafely('div', { className: 'setting-item-desc' }, this.t('languageDesc')));
+			const langItem = createElement('div', { className: 'setting-item' });
+			const langInfo = createElement('div', { className: 'setting-item-info' });
+			langInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('languageLabel')));
+			langInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('languageDesc')));
 
-			const langSelect = createElementSafely('select', { className: 'setting-select', id: 'select-language' });
+			const langSelect = createElement('select', { className: 'setting-select', id: 'select-language' });
 			const currentLang = GM_getValue(SETTING_KEYS.LANGUAGE, 'auto');
 			[
 				{ value: 'auto', label: this.t('languageAuto') },
@@ -2644,36 +3113,107 @@
 				{ value: 'zh-TW', label: this.t('languageZhTW') },
 				{ value: 'en', label: this.t('languageEn') }
 			].forEach(opt => {
-				const option = createElementSafely('option', { value: opt.value }, opt.label);
+				const option = createElement('option', { value: opt.value }, opt.label);
 				if (opt.value === currentLang) option.selected = true;
 				langSelect.appendChild(option);
 			});
 			langSelect.addEventListener('change', () => {
 				GM_setValue(SETTING_KEYS.LANGUAGE, langSelect.value);
-				// 更新当前语言并重新渲染 UI，实现即时生效
 				this.lang = detectLanguage();
 				this.i18n = I18N[this.lang];
 				this.createStyles();
 				this.createUI();
 				this.bindEvents();
-				// 切换到设置面板
 				this.switchTab('settings');
 				this.showToast(langSelect.value === 'auto' ? this.t('languageAuto') : langSelect.options[langSelect.selectedIndex].text);
 			});
 
 			langItem.appendChild(langInfo);
 			langItem.appendChild(langSelect);
-			generalSection.appendChild(langItem);
+			langSection.appendChild(langItem);
+			content.appendChild(langSection);
 
-			// 页面宽度设置
-			const widthSection = createElementSafely('div', { className: 'settings-section' });
-			widthSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('pageWidthLabel')));
-			// 启用页面加宽开关
-			const enableWidthItem = createElementSafely('div', { className: 'setting-item' });
-			const enableWidthInfo = createElementSafely('div', { className: 'setting-item-info' });
-			enableWidthInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('enablePageWidth')));
-			enableWidthInfo.appendChild(createElementSafely('div', { className: 'setting-item-desc' }, this.t('pageWidthDesc')));
-			const enableToggle = createElementSafely('div', {
+
+			// 2. 模型锁定设置 (可折叠)
+			if (this.registry && this.registry.adapters) {
+				const adaptersWithLock = this.registry.adapters;
+				if (adaptersWithLock.length > 0) {
+					const lockContainer = createElement('div', {});
+					// 为每个站点生成配置行
+					adaptersWithLock.forEach(adapter => {
+						const siteId = adapter.getSiteId();
+						const siteConfig = this.settings.modelLockConfig[siteId] || adapter.getDefaultLockSettings();
+
+						const row = createElement('div', {
+							className: 'site-lock-row',
+							style: 'display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6;'
+						});
+
+						const leftCol = createElement('div', { style: 'display: flex; align-items: center; flex: 1; gap: 12px;' });
+						const nameLabel = createElement('div', { style: 'font-size: 14px; font-weight: 500; color: #374151; min-width: 80px;' }, adapter.getName());
+						const toggle = createElement('div', {
+							className: 'setting-toggle' + (siteConfig.enabled ? ' active' : ''),
+							style: 'transform: scale(0.8);'
+						});
+
+						leftCol.appendChild(nameLabel);
+						leftCol.appendChild(toggle);
+
+						const rightCol = createElement('div', {});
+						const keywordInput = createElement('input', {
+							type: 'text',
+							className: 'prompt-input-title',
+							value: siteConfig.keyword || '',
+							placeholder: this.t('modelKeywordPlaceholder'),
+							style: 'width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; text-align: center;'
+						});
+
+						const updateState = () => {
+							keywordInput.disabled = !siteConfig.enabled;
+							keywordInput.style.opacity = siteConfig.enabled ? '1' : '0.5';
+							keywordInput.style.cursor = siteConfig.enabled ? 'text' : 'not-allowed';
+							toggle.className = 'setting-toggle' + (siteConfig.enabled ? ' active' : '');
+						};
+						updateState();
+
+						toggle.addEventListener('click', (e) => {
+							e.stopPropagation();
+							siteConfig.enabled = !siteConfig.enabled;
+							this.settings.modelLockConfig[siteId] = siteConfig;
+							updateState();
+							this.saveSettings();
+							if (siteId === this.siteAdapter.getSiteId() && siteConfig.enabled) {
+								this.siteAdapter.lockModel(siteConfig.keyword);
+							}
+						});
+
+						keywordInput.addEventListener('change', () => {
+							siteConfig.keyword = keywordInput.value.trim();
+							this.settings.modelLockConfig[siteId] = siteConfig;
+							this.saveSettings();
+						});
+
+						rightCol.appendChild(keywordInput);
+						row.appendChild(leftCol);
+						row.appendChild(rightCol);
+						lockContainer.appendChild(row);
+					});
+
+					const lockSection = this.createCollapsibleSection(this.t('modelLockTitle'), lockContainer);
+					content.appendChild(lockSection);
+				}
+			}
+
+
+			// 3. 页面宽度设置 (可折叠)
+			const widthContainer = createElement('div', {});
+
+			// 启用开关
+			const enableWidthItem = createElement('div', { className: 'setting-item' });
+			const enableWidthInfo = createElement('div', { className: 'setting-item-info' });
+			enableWidthInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('enablePageWidth')));
+			enableWidthInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('pageWidthDesc')));
+			const enableToggle = createElement('div', {
 				className: 'setting-toggle' + (this.settings.pageWidth && this.settings.pageWidth.enabled ? ' active' : ''),
 				id: 'toggle-page-width'
 			});
@@ -2681,7 +3221,6 @@
 				this.settings.pageWidth.enabled = !this.settings.pageWidth.enabled;
 				enableToggle.classList.toggle('active', this.settings.pageWidth.enabled);
 				this.saveSettings();
-				// 应用宽度样式
 				if (this.widthStyleManager) {
 					this.widthStyleManager.updateConfig(this.settings.pageWidth);
 				}
@@ -2689,108 +3228,156 @@
 			});
 			enableWidthItem.appendChild(enableWidthInfo);
 			enableWidthItem.appendChild(enableToggle);
-			widthSection.appendChild(enableWidthItem);
-			// 宽度值和单位设置
-			const widthValueItem = createElementSafely('div', { className: 'setting-item' });
-			const widthValueInfo = createElementSafely('div', { className: 'setting-item-info' });
-			widthValueInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('widthValue')));
+			widthContainer.appendChild(enableWidthItem);
 
-			const widthControls = createElementSafely('div', { className: 'setting-controls' });
+			// 值设置
+			const widthValueItem = createElement('div', { className: 'setting-item' });
+			const widthValueInfo = createElement('div', { className: 'setting-item-info' });
+			widthValueInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('widthValue')));
 
-			const widthInput = createElementSafely('input', {
+			const widthControls = createElement('div', { className: 'setting-controls' });
+			const widthInput = createElement('input', {
 				type: 'number',
 				className: 'setting-select',
 				id: 'width-value-input',
 				value: this.settings.pageWidth ? this.settings.pageWidth.value : '70',
 				style: 'width: 65px !important; min-width: 65px !important; text-align: right;'
 			});
-
-			const unitSelect = createElementSafely('select', {
-				className: 'setting-select',
-				id: 'width-unit-select',
-				style: 'width: 65px;'
-			});
+			const unitSelect = createElement('select', { className: 'setting-select', id: 'width-unit-select', style: 'width: 65px;' });
 			['%', 'px'].forEach(unit => {
-				const option = createElementSafely('option', { value: unit }, unit);
-				if (this.settings.pageWidth && this.settings.pageWidth.unit === unit) {
-					option.selected = true;
-				}
+				const option = createElement('option', { value: unit }, unit);
+				if (this.settings.pageWidth && this.settings.pageWidth.unit === unit) option.selected = true;
 				unitSelect.appendChild(option);
 			});
 
-			// 限制值逻辑
 			const validateAndSave = () => {
 				let val = parseFloat(widthInput.value);
 				const unit = unitSelect.value;
-
 				if (unit === '%') {
 					if (val > 100) val = 100;
-					if (val < 10) val = 10; // 最小限制
+					if (val < 10) val = 10;
 				} else {
-					if (val < 400) val = 400; // 像素最小限制
+					if (val < 400) val = 400;
 				}
-
-				// 如果值被修正了，更新输入框
-				if (val !== parseFloat(widthInput.value)) {
-					widthInput.value = val;
-				}
-
+				if (val !== parseFloat(widthInput.value)) widthInput.value = val;
 				this.settings.pageWidth.value = val.toString();
 				this.settings.pageWidth.unit = unit;
 				this.saveSettings();
-
-				if (this.widthStyleManager) {
-					this.widthStyleManager.updateConfig(this.settings.pageWidth);
-				}
+				if (this.widthStyleManager) this.widthStyleManager.updateConfig(this.settings.pageWidth);
 			};
 
-			// 输入变化事件（防抖）
 			let timeout;
 			widthInput.addEventListener('input', () => {
-				// 实时限制输入长度，避免太长
 				if (widthInput.value.length > 5) widthInput.value = widthInput.value.slice(0, 5);
-
-				// 实时限制百分比逻辑
-				if (unitSelect.value === '%' && parseFloat(widthInput.value) > 100) {
-					widthInput.value = '100';
-				}
-
+				if (unitSelect.value === '%' && parseFloat(widthInput.value) > 100) widthInput.value = '100';
 				clearTimeout(timeout);
 				timeout = setTimeout(validateAndSave, 500);
 			});
-
-			widthInput.addEventListener('change', validateAndSave); // 失去焦点或回车立即保存
-
+			widthInput.addEventListener('change', validateAndSave);
 			unitSelect.addEventListener('change', () => {
-				// 切换单位时，提供合理的默认转换或限制
-				if (unitSelect.value === '%' && parseFloat(widthInput.value) > 100) {
-					widthInput.value = '70'; // 切换到%时，默认给个舒服的宽度
-				} else if (unitSelect.value === 'px' && parseFloat(widthInput.value) <= 100) {
-					widthInput.value = '1200'; // 切换到px时，默认给个舒服的宽度
-				}
+				if (unitSelect.value === '%' && parseFloat(widthInput.value) > 100) widthInput.value = '70';
+				else if (unitSelect.value === 'px' && parseFloat(widthInput.value) <= 100) widthInput.value = '1200';
 				validateAndSave();
 				this.showToast(`${this.t('widthValue')}: ${widthInput.value}${unitSelect.value}`);
 			});
 
 			widthControls.appendChild(widthInput);
 			widthControls.appendChild(unitSelect);
-
 			widthValueItem.appendChild(widthValueInfo);
 			widthValueItem.appendChild(widthControls);
-			widthSection.appendChild(widthValueItem);
-			content.appendChild(generalSection);
+			widthContainer.appendChild(widthValueItem);
+
+			const widthSection = this.createCollapsibleSection(this.t('pageWidthLabel'), widthContainer);
 			content.appendChild(widthSection);
 
-			// 大纲设置区
-			const outlineSection = createElementSafely('div', { className: 'settings-section' });
-			outlineSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('outlineSettings')));
 
-			// 启用大纲开关
-			const enableOutlineItem = createElementSafely('div', { className: 'setting-item' });
-			const enableOutlineInfo = createElementSafely('div', { className: 'setting-item-info' });
-			enableOutlineInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('enableOutline')));
+			// 4. 界面排版 (可折叠)
+			const layoutContainer = createElement('div', {});
+			const tabDesc = createElement('div', {
+				className: 'setting-item-desc',
+				style: 'padding: 0 12px 8px 12px; margin-bottom: 4px;'
+			}, this.t('tabOrderDesc'));
+			layoutContainer.appendChild(tabDesc);
 
-			const outlineToggle = createElementSafely('div', {
+			const currentOrder = this.settings.tabOrder || DEFAULT_TAB_ORDER;
+			const validOrder = currentOrder.filter(id => TAB_DEFINITIONS[id]);
+
+			validOrder.forEach((tabId, index) => {
+				const def = TAB_DEFINITIONS[tabId];
+				const item = createElement('div', { className: 'setting-item' });
+				const info = createElement('div', { className: 'setting-item-info' });
+				info.appendChild(createElement('div', { className: 'setting-item-label' }, this.t(def.labelKey)));
+
+				const controls = createElement('div', { className: 'setting-controls' });
+				const upBtn = createElement('button', {
+					className: 'prompt-panel-btn',
+					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; margin-right: 4px; border: 1px solid #e5e7eb;',
+					title: this.t('moveUp')
+				});
+				upBtn.textContent = '⬆';
+				upBtn.disabled = index === 0;
+
+				const downBtn = createElement('button', {
+					className: 'prompt-panel-btn',
+					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; border: 1px solid #e5e7eb;',
+					title: this.t('moveDown')
+				});
+				downBtn.textContent = '⬇';
+				downBtn.disabled = index === validOrder.length - 1;
+
+				[upBtn, downBtn].forEach(btn => {
+					if (btn.disabled) {
+						btn.style.opacity = '0.4';
+						btn.style.cursor = 'not-allowed';
+						btn.style.background = '#f3f4f6';
+					} else {
+						btn.style.opacity = '1';
+						btn.style.cursor = 'pointer';
+						btn.onmouseover = () => { btn.style.background = '#e5e7eb'; btn.style.color = '#111827'; };
+						btn.onmouseout = () => { btn.style.background = '#f3f4f6'; btn.style.color = '#4b5563'; };
+					}
+				});
+
+				upBtn.addEventListener('click', () => {
+					if (index > 0) {
+						const newOrder = [...validOrder];
+						[newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+						this.settings.tabOrder = newOrder;
+						this.saveSettings();
+						this.createUI();
+						this.switchTab('settings');
+					}
+				});
+
+				downBtn.addEventListener('click', () => {
+					if (index < validOrder.length - 1) {
+						const newOrder = [...validOrder];
+						[newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+						this.settings.tabOrder = newOrder;
+						this.saveSettings();
+						this.createUI();
+						this.switchTab('settings');
+					}
+				});
+
+				controls.appendChild(upBtn);
+				controls.appendChild(downBtn);
+				item.appendChild(info);
+				item.appendChild(controls);
+				layoutContainer.appendChild(item);
+			});
+
+			const layoutSection = this.createCollapsibleSection(this.t('tabOrderSettings'), layoutContainer);
+			content.appendChild(layoutSection);
+
+
+			// 5. 大纲设置 (保持独立块)
+			const outlineSection = createElement('div', { className: 'settings-section' });
+			outlineSection.appendChild(createElement('div', { className: 'settings-section-title' }, this.t('outlineSettings')));
+			const enableOutlineItem = createElement('div', { className: 'setting-item' });
+			const enableOutlineInfo = createElement('div', { className: 'setting-item-info' });
+			enableOutlineInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('enableOutline')));
+			const outlineToggle = createElement('div', {
 				className: 'setting-toggle' + (this.settings.outline?.enabled ? ' active' : ''),
 				id: 'toggle-outline'
 			});
@@ -2798,32 +3385,27 @@
 				this.settings.outline.enabled = !this.settings.outline.enabled;
 				outlineToggle.classList.toggle('active', this.settings.outline.enabled);
 				this.saveSettings();
-				// 显示/隐藏大纲 Tab
 				const outlineTab = document.getElementById('outline-tab');
-				if (outlineTab) {
-					outlineTab.classList.toggle('hidden', !this.settings.outline.enabled);
-				}
-				// 如果正在大纲 Tab 且被禁用，切换到提示词 Tab
-				if (!this.settings.outline.enabled && this.currentTab === 'outline') {
-					this.switchTab('prompts');
-				}
+				if (outlineTab) outlineTab.classList.toggle('hidden', !this.settings.outline.enabled);
+				if (!this.settings.outline.enabled && this.currentTab === 'outline') this.switchTab('prompts');
 				this.showToast(this.settings.outline.enabled ? this.t('settingOn') : this.t('settingOff'));
 			});
-
 			enableOutlineItem.appendChild(enableOutlineInfo);
 			enableOutlineItem.appendChild(outlineToggle);
 			outlineSection.appendChild(enableOutlineItem);
-
 			content.appendChild(outlineSection);
 
-			// 只在 Gemini Business 时添加清空输入框设置
-			if (this.siteAdapter instanceof GeminiBusinessAdapter) {
-				const clearItem = createElementSafely('div', { className: 'setting-item' });
-				const clearInfo = createElementSafely('div', { className: 'setting-item-info' });
-				clearInfo.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t('clearOnSendLabel')));
-				clearInfo.appendChild(createElementSafely('div', { className: 'setting-item-desc' }, this.t('clearOnSendDesc')));
 
-				const toggle = createElementSafely('div', {
+			// 6. Gemini Business 专属设置
+			if (this.siteAdapter instanceof GeminiBusinessAdapter) {
+				const businessSection = createElement('div', { className: 'settings-section' });
+				businessSection.appendChild(createElement('div', { className: 'settings-section-title' }, this.siteAdapter.getName()));
+
+				const clearItem = createElement('div', { className: 'setting-item' });
+				const clearInfo = createElement('div', { className: 'setting-item-info' });
+				clearInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('clearOnSendLabel')));
+				clearInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('clearOnSendDesc')));
+				const toggle = createElement('div', {
 					className: 'setting-toggle' + (this.settings.clearTextareaOnSend ? ' active' : ''),
 					id: 'toggle-clear-on-send'
 				});
@@ -2833,113 +3415,12 @@
 					this.saveSettings();
 					this.showToast(this.settings.clearTextareaOnSend ? this.t('settingOn') : this.t('settingOff'));
 				});
-
 				clearItem.appendChild(clearInfo);
 				clearItem.appendChild(toggle);
-				generalSection.appendChild(clearItem);
+				businessSection.appendChild(clearItem);
+				content.appendChild(businessSection);
 			}
 
-			// Tab 排序设置
-			const tabOrderSection = createElementSafely('div', { className: 'settings-section' });
-			tabOrderSection.appendChild(createElementSafely('div', { className: 'settings-section-title' }, this.t('tabOrderSettings')));
-
-			// 说明
-			const tabDesc = createElementSafely('div', {
-				className: 'setting-item-desc',
-				style: 'padding: 0 12px 8px 12px; margin-bottom: 4px;'
-			}, this.t('tabOrderDesc'));
-			tabOrderSection.appendChild(tabDesc);
-
-			const currentOrder = this.settings.tabOrder || DEFAULT_TAB_ORDER;
-			// 过滤有效定义
-			const validOrder = currentOrder.filter(id => TAB_DEFINITIONS[id]);
-
-			validOrder.forEach((tabId, index) => {
-				const def = TAB_DEFINITIONS[tabId];
-				const item = createElementSafely('div', { className: 'setting-item' });
-
-				const info = createElementSafely('div', { className: 'setting-item-info' });
-				info.appendChild(createElementSafely('div', { className: 'setting-item-label' }, this.t(def.labelKey)));
-
-				const controls = createElementSafely('div', { className: 'setting-controls' });
-
-				// 上移按钮
-				const upBtn = createElementSafely('button', {
-					className: 'prompt-panel-btn',
-					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; margin-right: 4px; border: 1px solid #e5e7eb;',
-					title: this.t('moveUp')
-				});
-				upBtn.textContent = '⬆';
-				upBtn.disabled = index === 0;
-
-				// 下移按钮
-				const downBtn = createElementSafely('button', {
-					className: 'prompt-panel-btn',
-					style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; border: 1px solid #e5e7eb;',
-					title: this.t('moveDown')
-				});
-				downBtn.textContent = '⬇';
-				downBtn.disabled = index === validOrder.length - 1;
-
-				// 按钮状态样式修正 helper
-				const updateButtonStyle = (btn) => {
-					if (btn.disabled) {
-						btn.style.opacity = '0.4';
-						btn.style.cursor = 'not-allowed';
-						btn.style.background = '#f3f4f6';
-					} else {
-						btn.style.opacity = '1';
-						btn.style.cursor = 'pointer';
-					}
-				};
-
-				updateButtonStyle(upBtn);
-				updateButtonStyle(downBtn);
-
-				// 事件绑定（仅在非禁用时生效，虽然 disabled 属性本身阻止了 click，但为了保险）
-				if (!upBtn.disabled) {
-					upBtn.onmouseover = () => { upBtn.style.background = '#e5e7eb'; upBtn.style.color = '#111827'; };
-					upBtn.onmouseout = () => { upBtn.style.background = '#f3f4f6'; upBtn.style.color = '#4b5563'; };
-				}
-
-				if (!downBtn.disabled) {
-					downBtn.onmouseover = () => { downBtn.style.background = '#e5e7eb'; downBtn.style.color = '#111827'; };
-					downBtn.onmouseout = () => { downBtn.style.background = '#f3f4f6'; downBtn.style.color = '#4b5563'; };
-				}
-
-				upBtn.addEventListener('click', () => {
-					if (index > 0) {
-						// 交换位置
-						const newOrder = [...validOrder];
-						[newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-						this.settings.tabOrder = newOrder;
-						this.saveSettings();
-						this.createUI(); // 重新渲染界面
-						this.switchTab('settings'); // 保持在设置页
-					}
-				});
-
-				downBtn.addEventListener('click', () => {
-					if (index < validOrder.length - 1) {
-						// 交换位置
-						const newOrder = [...validOrder];
-						[newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-						this.settings.tabOrder = newOrder;
-						this.saveSettings();
-						this.createUI(); // 重新渲染界面
-						this.switchTab('settings'); // 保持在设置页
-					}
-				});
-
-				controls.appendChild(upBtn);
-				controls.appendChild(downBtn);
-
-				item.appendChild(info);
-				item.appendChild(controls);
-				tabOrderSection.appendChild(item);
-			});
-
-			content.appendChild(tabOrderSection);
 			container.appendChild(content);
 		}
 
@@ -2988,13 +3469,13 @@
 			const container = document.getElementById('prompt-categories');
 			if (!container) return;
 			const categories = this.getCategories();
-			clearElementSafely(container);
-			container.appendChild(createElementSafely('span', { className: 'category-tag active', 'data-category': 'all' }, this.t('allCategory')));
+			clearElement(container);
+			container.appendChild(createElement('span', { className: 'category-tag active', 'data-category': 'all' }, this.t('allCategory')));
 			categories.forEach(cat => {
-				container.appendChild(createElementSafely('span', { className: 'category-tag', 'data-category': cat }, cat));
+				container.appendChild(createElement('span', { className: 'category-tag', 'data-category': cat }, cat));
 			});
 			// 添加分类管理按钮
-			const manageBtn = createElementSafely('button', { className: 'category-manage-btn', title: this.t('categoryManage') }, this.t('manageCategory'));
+			const manageBtn = createElement('button', { className: 'category-manage-btn', title: this.t('categoryManage') }, this.t('manageCategory'));
 			manageBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.showCategoryModal();
@@ -3005,28 +3486,28 @@
 		// 显示分类管理弹窗
 		showCategoryModal() {
 			const categories = this.getCategories();
-			const modal = createElementSafely('div', { className: 'prompt-modal' });
-			const modalContent = createElementSafely('div', { className: 'prompt-modal-content category-modal-content' });
+			const modal = createElement('div', { className: 'prompt-modal' });
+			const modalContent = createElement('div', { className: 'prompt-modal-content category-modal-content' });
 
-			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, this.t('categoryManage'));
+			const modalHeader = createElement('div', { className: 'prompt-modal-header' }, this.t('categoryManage'));
 			modalContent.appendChild(modalHeader);
 
-			const categoryList = createElementSafely('div', { className: 'category-list' });
+			const categoryList = createElement('div', { className: 'category-list' });
 
 			if (categories.length === 0) {
-				categoryList.appendChild(createElementSafely('div', { className: 'category-empty' }, this.t('categoryEmpty')));
+				categoryList.appendChild(createElement('div', { className: 'category-empty' }, this.t('categoryEmpty')));
 			} else {
 				categories.forEach(cat => {
 					const count = this.prompts.filter(p => p.category === cat).length;
-					const item = createElementSafely('div', { className: 'category-item' });
+					const item = createElement('div', { className: 'category-item' });
 
-					const info = createElementSafely('div', { className: 'category-item-info' });
-					info.appendChild(createElementSafely('span', { className: 'category-item-name' }, cat));
-					info.appendChild(createElementSafely('span', { className: 'category-item-count' }, `${count} 个提示词`));
+					const info = createElement('div', { className: 'category-item-info' });
+					info.appendChild(createElement('span', { className: 'category-item-name' }, cat));
+					info.appendChild(createElement('span', { className: 'category-item-count' }, `${count} 个提示词`));
 
-					const actions = createElementSafely('div', { className: 'category-item-actions' });
-					const renameBtn = createElementSafely('button', { className: 'category-action-btn rename' }, this.t('rename'));
-					const deleteBtn = createElementSafely('button', { className: 'category-action-btn delete' }, this.t('delete'));
+					const actions = createElement('div', { className: 'category-item-actions' });
+					const renameBtn = createElement('button', { className: 'category-action-btn rename' }, this.t('rename'));
+					const deleteBtn = createElement('button', { className: 'category-action-btn delete' }, this.t('delete'));
 
 					renameBtn.addEventListener('click', () => {
 						const newName = window.prompt(this.t('newCategoryName'), cat);
@@ -3055,8 +3536,8 @@
 
 			modalContent.appendChild(categoryList);
 
-			const btnGroup = createElementSafely('div', { className: 'prompt-modal-btns' });
-			const closeBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, this.t('cancel'));
+			const btnGroup = createElement('div', { className: 'prompt-modal-btns' });
+			const closeBtn = createElement('button', { className: 'prompt-modal-btn secondary' }, this.t('cancel'));
 			closeBtn.addEventListener('click', () => modal.remove());
 			btnGroup.appendChild(closeBtn);
 			modalContent.appendChild(btnGroup);
@@ -3101,26 +3582,26 @@
 			if (activeCategory !== 'all') filteredPrompts = filteredPrompts.filter(p => p.category === activeCategory);
 			if (filter) filteredPrompts = filteredPrompts.filter(p => p.title.toLowerCase().includes(filter.toLowerCase()) || p.content.toLowerCase().includes(filter.toLowerCase()));
 
-			clearElementSafely(container);
+			clearElement(container);
 
 			if (filteredPrompts.length === 0) {
-				container.appendChild(createElementSafely('div', { style: 'text-align: center; padding: 20px; color: #9ca3af;' }, '暂无提示词'));
+				container.appendChild(createElement('div', { style: 'text-align: center; padding: 20px; color: #9ca3af;' }, '暂无提示词'));
 				return;
 			}
 
 			filteredPrompts.forEach((prompt, index) => {
-				const item = createElementSafely('div', { className: 'prompt-item', draggable: 'false', style: 'user-select: none;' });
+				const item = createElement('div', { className: 'prompt-item', draggable: 'false', style: 'user-select: none;' });
 				item.dataset.promptId = prompt.id;
 				item.dataset.index = index;
 				if (this.selectedPrompt?.id === prompt.id) item.classList.add('selected');
 
-				const itemHeader = createElementSafely('div', { className: 'prompt-item-header' });
-				itemHeader.appendChild(createElementSafely('div', { className: 'prompt-item-title' }, prompt.title));
-				itemHeader.appendChild(createElementSafely('span', { className: 'prompt-item-category' }, prompt.category || '未分类'));
+				const itemHeader = createElement('div', { className: 'prompt-item-header' });
+				itemHeader.appendChild(createElement('div', { className: 'prompt-item-title' }, prompt.title));
+				itemHeader.appendChild(createElement('span', { className: 'prompt-item-category' }, prompt.category || '未分类'));
 
-				const itemContent = createElementSafely('div', { className: 'prompt-item-content' }, prompt.content);
-				const itemActions = createElementSafely('div', { className: 'prompt-item-actions' });
-				const dragBtn = createElementSafely('button', { className: 'prompt-action-btn drag-prompt', 'data-id': prompt.id, title: '拖动排序' }, '☰');
+				const itemContent = createElement('div', { className: 'prompt-item-content' }, prompt.content);
+				const itemActions = createElement('div', { className: 'prompt-item-actions' });
+				const dragBtn = createElement('button', { className: 'prompt-action-btn drag-prompt', 'data-id': prompt.id, title: '拖动排序' }, '☰');
 				dragBtn.style.cursor = 'grab';
 
 				// 仅当按下拖拽按钮时才允许拖动
@@ -3135,9 +3616,9 @@
 				});
 
 				itemActions.appendChild(dragBtn);
-				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn copy-prompt', 'data-id': prompt.id, title: '复制' }, '📋'));
-				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn edit-prompt', 'data-id': prompt.id, title: '编辑' }, '✏'));
-				itemActions.appendChild(createElementSafely('button', { className: 'prompt-action-btn delete-prompt', 'data-id': prompt.id, title: '删除' }, '🗑'));
+				itemActions.appendChild(createElement('button', { className: 'prompt-action-btn copy-prompt', 'data-id': prompt.id, title: '复制' }, '📋'));
+				itemActions.appendChild(createElement('button', { className: 'prompt-action-btn edit-prompt', 'data-id': prompt.id, title: '编辑' }, '✏'));
+				itemActions.appendChild(createElement('button', { className: 'prompt-action-btn delete-prompt', 'data-id': prompt.id, title: '删除' }, '🗑'));
 
 				item.appendChild(itemHeader);
 				item.appendChild(itemContent);
@@ -3248,30 +3729,30 @@
 
 		showEditModal(prompt = null) {
 			const isEdit = prompt !== null;
-			const modal = createElementSafely('div', { className: 'prompt-modal' });
-			const modalContent = createElementSafely('div', { className: 'prompt-modal-content' });
+			const modal = createElement('div', { className: 'prompt-modal' });
+			const modalContent = createElement('div', { className: 'prompt-modal-content' });
 
-			const modalHeader = createElementSafely('div', { className: 'prompt-modal-header' }, isEdit ? this.t('editPrompt') : this.t('addNewPrompt'));
+			const modalHeader = createElement('div', { className: 'prompt-modal-header' }, isEdit ? this.t('editPrompt') : this.t('addNewPrompt'));
 
-			const titleGroup = createElementSafely('div', { className: 'prompt-form-group' });
-			titleGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, this.t('title')));
-			const titleInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? prompt.title : '' });
+			const titleGroup = createElement('div', { className: 'prompt-form-group' });
+			titleGroup.appendChild(createElement('label', { className: 'prompt-form-label' }, this.t('title')));
+			const titleInput = createElement('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? prompt.title : '' });
 			titleGroup.appendChild(titleInput);
 
-			const categoryGroup = createElementSafely('div', { className: 'prompt-form-group' });
-			categoryGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, this.t('category')));
-			const categoryInput = createElementSafely('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? (prompt.category || '') : '', placeholder: this.t('categoryPlaceholder') });
+			const categoryGroup = createElement('div', { className: 'prompt-form-group' });
+			categoryGroup.appendChild(createElement('label', { className: 'prompt-form-label' }, this.t('category')));
+			const categoryInput = createElement('input', { className: 'prompt-form-input', type: 'text', value: isEdit ? (prompt.category || '') : '', placeholder: this.t('categoryPlaceholder') });
 			categoryGroup.appendChild(categoryInput);
 
-			const contentGroup = createElementSafely('div', { className: 'prompt-form-group' });
-			contentGroup.appendChild(createElementSafely('label', { className: 'prompt-form-label' }, this.t('content')));
-			const contentTextarea = createElementSafely('textarea', { className: 'prompt-form-textarea' });
+			const contentGroup = createElement('div', { className: 'prompt-form-group' });
+			contentGroup.appendChild(createElement('label', { className: 'prompt-form-label' }, this.t('content')));
+			const contentTextarea = createElement('textarea', { className: 'prompt-form-textarea' });
 			contentTextarea.value = isEdit ? prompt.content : '';
 			contentGroup.appendChild(contentTextarea);
 
-			const modalActions = createElementSafely('div', { className: 'prompt-modal-actions' });
-			const cancelBtn = createElementSafely('button', { className: 'prompt-modal-btn secondary' }, this.t('cancel'));
-			const saveBtn = createElementSafely('button', { className: 'prompt-modal-btn primary' }, isEdit ? this.t('save') : this.t('add'));
+			const modalActions = createElement('div', { className: 'prompt-modal-actions' });
+			const cancelBtn = createElement('button', { className: 'prompt-modal-btn secondary' }, this.t('cancel'));
+			const saveBtn = createElement('button', { className: 'prompt-modal-btn primary' }, isEdit ? this.t('save') : this.t('add'));
 
 			modalActions.appendChild(cancelBtn);
 			modalActions.appendChild(saveBtn);
@@ -3304,7 +3785,7 @@
 		}
 
 		showToast(message) {
-			const toast = createElementSafely('div', { className: 'prompt-toast' }, message);
+			const toast = createElement('div', { className: 'prompt-toast' }, message);
 			document.body.appendChild(toast);
 			setTimeout(() => {
 				toast.style.animation = 'toastSlideIn 0.3s reverse';
@@ -3562,28 +4043,35 @@
 	}
 
 	function init() {
-		// 初始化站点注册表
-		const siteRegistry = new SiteRegistry();
-		siteRegistry.register(new GeminiBusinessAdapter()); // 优先检测
-		siteRegistry.register(new GeminiAdapter());
-		siteRegistry.register(new GensparkAdapter());
+		try {
+			console.log('Gemini Helper: Initializing...');
+			// 初始化站点注册表
+			const siteRegistry = new SiteRegistry();
+			siteRegistry.register(new GeminiBusinessAdapter()); // 优先检测
+			siteRegistry.register(new GeminiAdapter());
+			siteRegistry.register(new GensparkAdapter());
 
-		const currentAdapter = siteRegistry.detect();
+			const currentAdapter = siteRegistry.detect();
 
-		if (!currentAdapter) {
-			console.log('Gemini Helper: 未匹配到当前站点，跳过初始化。');
-			return;
-		}
-
-		console.log(`Gemini Helper: 已匹配站点 - ${currentAdapter.getName()}`);
-
-		setTimeout(() => {
-			try {
-				new GeminiHelper(currentAdapter);
-			} catch (error) {
-				console.error('Gemini Helper 启动失败', error);
+			if (!currentAdapter) {
+				console.log('Gemini Helper: 未匹配到当前站点，跳过初始化。');
+				return;
 			}
-		}, 2000);
+
+			console.log(`Gemini Helper: 已匹配站点 - ${currentAdapter.getName()}`);
+
+			setTimeout(() => {
+				try {
+					console.log('Gemini Helper: Creating instance...');
+					window.geminiHelper = new GeminiHelper(siteRegistry);
+					console.log('Gemini Helper: Instance created successfully.');
+				} catch (error) {
+					console.error('Gemini Helper: 启动失败 (Constructor Error)', error);
+				}
+			}, 2000);
+		} catch (e) {
+			console.error('Gemini Helper: 初始化失败 (Init Error)', e);
+		}
 	}
 
 	if (document.readyState === 'loading') {

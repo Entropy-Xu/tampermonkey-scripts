@@ -1,6 +1,8 @@
 # Gemini-helper
 
-> Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
+> Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、模型自动锁定、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
+
+> Gemini Helper: Supports conversation outline (search/jump/detail), prompt management (category/group/drag), auto page width, auto model locking, Chinese input fix (Enterprise), multi-language support, smart adaptation for Gemini Standard/Enterprise/Genspark
 
 ## ✨ 功能特性
 
@@ -78,6 +80,11 @@
 | ⬆ / ⬇ 按钮  | 跳转页面顶部/底部 |
 
 ## 📋 [更新日志](./changelog.md)
+
+### v1.7.1
+
+- ✨ **新功能**：支持全站点模型自动化锁定（Gemini / Vertex AI / AI Studio）
+- 🎨 **UI**：优化设置面板样式，支持折叠收纳与顺序调整
 
 ### v1.7.0
 
