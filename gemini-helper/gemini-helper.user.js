@@ -5302,6 +5302,28 @@
 				}
 			});
 
+			// 3. 回车键发送监听
+			document.addEventListener('keydown', (e) => {
+				// 仅处理 Enter 键（不带 Shift 修饰符，避免干扰换行操作）
+				if (e.key !== 'Enter' || e.shiftKey) return;
+
+				// 使用 composedPath 检查事件源是否来自输入框（兼容 Shadow DOM）
+				const path = typeof e.composedPath === 'function' ? e.composedPath() : (e.path || []);
+				const isFromTextarea = path.some(element =>
+					element && element instanceof Element && this.siteAdapter.isValidTextarea(element)
+				);
+
+				if (!isFromTextarea) return;
+
+				// 与点击发送按钮相同的清理逻辑
+				if (this.selectedPrompt) {
+					setTimeout(() => { this.clearSelectedPrompt(); }, 100);
+				}
+				if (this.siteAdapter instanceof GeminiBusinessAdapter && this.settings.clearTextareaOnSend) {
+					setTimeout(() => { this.siteAdapter.clearTextarea(); }, 200);
+				}
+			}, true); // 使用捕获阶段确保在 Shadow DOM 场景下也能捕获
+
 			document.getElementById('toggle-panel')?.addEventListener('click', () => this.togglePanel());
 			this.makeDraggable();
 
