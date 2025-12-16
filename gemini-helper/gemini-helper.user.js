@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.3
-// @description  Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、模型自动锁定、阅读历史自动恢复、双向锚点快速定位、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
-// @description:en Gemini Helper: Supports conversation outline, prompt management, auto page width, model locking, reading history auto-restore, bidirectional anchor navigation, Chinese input fix, multi-language support, smart adaptation for Gemini Standard/Enterprise/Genspark
+// @version      1.8.1
+// @description  Gemini 助手：支持对话大纲、提示词管理、模型锁定、标签页增强（状态显示/隐私模式/生成完成通知）、阅读历史恢复、双向锚点、自动加宽页面、中文输入修复，智能适配 Gemini 标准版/企业版/Genspark
+// @description:en Gemini Helper: Supports outline navigation, prompt management, model locking, tab enhancements (status display/privacy mode/completion notification), reading history, bidirectional anchor, auto page width, Chinese input fix, smart adaptation for Gemini Standard/Enterprise/Genspark
 // @author       urzeye
 // @homepage     https://github.com/urzeye
 // @note         参考 https://linux.do/t/topic/925110 的代码与UI布局拓展实现
@@ -15,9 +15,12 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
+// @grant        GM_notification
+// @grant        window.focus
 // @run-at       document-idle
 // @supportURL   https://github.com/urzeye/tampermonkey-scripts/issues
 // @homepageURL  https://github.com/urzeye/tampermonkey-scripts
+// @require      https://update.greasyfork.org/scripts/559089/1714656/background-keep-alive.js
 // @license      MIT
 // @downloadURL https://update.greasyfork.org/scripts/558318/gemini-helper.user.js
 // @updateURL https://update.greasyfork.org/scripts/558318/gemini-helper.meta.js
@@ -44,6 +47,7 @@
 		MODEL_LOCK: 'gemini_model_lock',
 		PROMPTS_SETTINGS: 'gemini_prompts_settings',
 		READING_HISTORY: 'gemini_reading_history_settings',
+		TAB_SETTINGS: 'gemini_tab_settings',
 	};
 
 	// 默认 Tab 顺序
@@ -53,6 +57,17 @@
 		persistence: true,
 		autoRestore: false,
 		cleanupDays: 30
+	};
+	const DEFAULT_TAB_SETTINGS = {
+		openInNewTab: true,        // 新标签页打开新对话
+		autoRenameTab: true,       // 自动重命名标签页
+		renameInterval: 3,         // 检测频率(秒)
+		showStatus: true,          // 显示生成状态图标 (⏳/✅)
+		showNotification: false,   // 发送桌面通知
+		autoFocus: false,          // 生成完成后自动将窗口置顶
+		privacyMode: false,        // 隐私模式
+		privacyTitle: 'Google',    // 隐私模式下的伪装标题
+		titleFormat: '{status}{title}-{model}'  // 自定义标题格式，支持 {status}、{title}、{model}
 	};
 
 	// Tab 定义（用于渲染和显示）
@@ -126,7 +141,7 @@
 			categoryDeleted: '分类已删除',
 			// 语言设置
 			languageLabel: '界面语言',
-			languageDesc: '设置面板显示语言，重新打开页面生效',
+			languageDesc: '设置面板显示语言，即时生效',
 			languageAuto: '跟随系统',
 			languageZhCN: '简体中文',
 			languageZhTW: '繁體中文',
@@ -139,6 +154,30 @@
 			widthUnit: '单位',
 			unitPx: '像素 (px)',
 			unitPercent: '百分比 (%)',
+			// 标签页设置
+			tabSettingsTitle: '标签页设置',
+			openNewTabLabel: '新标签页打开新对话',
+			openNewTabDesc: '在面板顶部添加按钮，点击后在新标签页打开新对话',
+			newTabTooltip: '新标签页开启对话',
+			autoRenameTabLabel: '自动重命名标签页',
+			autoRenameTabDesc: '将浏览器标签页名称改为当前对话名称',
+			renameIntervalLabel: '检测频率',
+			renameIntervalDesc: '检测对话名称变化的间隔时间',
+			secondsSuffix: '秒',
+			showStatusLabel: '显示生成状态',
+			showStatusDesc: '在标签页标题中显示生成状态图标（⏳/✅）',
+			showNotificationLabel: '发送桌面通知',
+			showNotificationDesc: '生成完成时发送系统通知（目前仅 Gemini Business 有效）',
+			autoFocusLabel: '自动窗口置顶',
+			autoFocusDesc: '生成完成时自动将窗口带回前台（目前仅 Gemini Business 有效）',
+			privacyModeLabel: '隐私模式',
+			privacyModeDesc: '隐藏真实对话标题，显示伪装标题（双击面板标题可快速切换）',
+			privacyTitleLabel: '伪装标题',
+			privacyTitlePlaceholder: '如：Google、工作文档',
+			titleFormatLabel: '标题格式',
+			titleFormatDesc: '自定义标题格式，支持占位符：{status}、{title}、{model}',
+			notificationTitle: '✅ {site} 生成完成',
+			notificationBody: '点击查看结果',
 			// 大纲功能
 			tabOutline: '大纲',
 			outlineEmpty: '暂无大纲内容',
@@ -173,7 +212,8 @@
 			tabOrderDesc: '调整面板 Tab 的显示顺序',
 			moveUp: '上移',
 			moveDown: '下移',
-			// 阅读历史设置
+			// 阅读导航设置
+			readingNavigationSettings: '阅读导航',
 			readingHistorySettings: '阅读历史',
 			readingHistoryPersistence: '启用阅读历史',
 			readingHistoryPersistenceDesc: '自动记录阅读位置，下次打开时恢复',
@@ -184,7 +224,23 @@
 			daysSuffix: '天',
 			cleanupInfinite: '永久',
 			restoredPosition: '已恢复上次阅读位置',
-			cleanupDone: '已清理过期数据'
+			cleanupDone: '已清理过期数据',
+			// 大纲高级设置
+			outlineAutoUpdateLabel: '对话期间自动更新大纲',
+			outlineAutoUpdateDesc: 'AI 生成内容时自动刷新目录结构',
+			outlineUpdateIntervalLabel: '更新检测间隔 (秒)',
+			outlineIntervalUpdated: '间隔已设为 {val} 秒',
+			// 页面显示设置
+			pageDisplaySettings: '页面显示',
+			// 其他设置
+			otherSettingsTitle: '其他设置',
+			showCollapsedAnchorLabel: '折叠面板显示锚点',
+			showCollapsedAnchorDesc: '当面板收起时，在侧边浮动条中显示锚点按钮',
+			preventAutoScrollLabel: '防止自动滚动',
+			preventAutoScrollDesc: '当 AI 生成长内容时，阻止页面自动滚动到底部，方便阅读上文',
+			// 界面排版开关
+			disableOutline: '禁用大纲',
+			togglePrompts: '启用/禁用提示词'
 		},
 		'zh-TW': {
 			panelTitle: 'Gemini 助手',
@@ -247,7 +303,7 @@
 			categoryDeleted: '分類已刪除',
 			// 語言設置
 			languageLabel: '介面語言',
-			languageDesc: '設定面板顯示語言，重新開啟頁面生效',
+			languageDesc: '設定面板顯示語言，即時生效',
 			languageAuto: '跟隨系統',
 			languageZhCN: '简体中文',
 			languageZhTW: '繁體中文',
@@ -260,6 +316,30 @@
 			widthUnit: '單位',
 			unitPx: '像素 (px)',
 			unitPercent: '百分比 (%)',
+			// 標籤頁設置
+			tabSettingsTitle: '標籤頁設置',
+			openNewTabLabel: '新分頁開啟新對話',
+			openNewTabDesc: '在面板頂部新增按鈕，點擊後在新分頁開啟新對話',
+			newTabTooltip: '新分頁開啟對話',
+			autoRenameTabLabel: '自動重新命名標籤頁',
+			autoRenameTabDesc: '將瀏覽器標籤頁名稱改為當前對話名稱',
+			renameIntervalLabel: '檢測頻率',
+			renameIntervalDesc: '檢測對話名稱變化的間隔時間',
+			secondsSuffix: '秒',
+			showStatusLabel: '顯示生成狀態',
+			showStatusDesc: '在標籤頁標題中顯示生成狀態圖示（⏳/✅）',
+			showNotificationLabel: '傳送桌面通知',
+			showNotificationDesc: '生成完成時傳送系统通知（僅 Gemini Business 有效）',
+			autoFocusLabel: '自動視窗置頂',
+			autoFocusDesc: '生成完成時自動將視窗帶回前台（僅 Gemini Business 有效）',
+			privacyModeLabel: '隱私模式',
+			privacyModeDesc: '隱藏真實對話標題，顯示偽裝標題（雙擊面板標題可快速切換）',
+			privacyTitleLabel: '偽裝標題',
+			privacyTitlePlaceholder: '如：Google、工作文件',
+			titleFormatLabel: '標題格式',
+			titleFormatDesc: '自訂標題格式，支援佔位符：{status}、{title}、{model}',
+			notificationTitle: '✅ {site} 生成完成',
+			notificationBody: '點擊查看結果',
 			// 大綱功能
 			tabOutline: '大綱',
 			outlineEmpty: '暫無大綱內容',
@@ -288,7 +368,8 @@
 			tabOrderDesc: '調整面板 Tab 的顯示順序',
 			moveUp: '上移',
 			moveDown: '下移',
-			// 阅读历史设置
+			// 阅读导航設置
+			readingNavigationSettings: '閱讀導航',
 			readingHistorySettings: '閱讀歷史',
 			readingHistoryPersistence: '啟用閱讀歷史',
 			readingHistoryPersistenceDesc: '自動記錄閱讀位置，下次開啟時恢復',
@@ -299,7 +380,23 @@
 			daysSuffix: '天',
 			cleanupInfinite: '永久',
 			restoredPosition: '已恢復上次閱讀位置',
-			cleanupDone: '已清理過期數據'
+			cleanupDone: '已清理過期數據',
+			// 大綱高級設置
+			outlineAutoUpdateLabel: '對話期間自動更新大綱',
+			outlineAutoUpdateDesc: 'AI 生成內容時自動刷新目錄結構',
+			outlineUpdateIntervalLabel: '更新檢測間隔 (秒)',
+			outlineIntervalUpdated: '間隔已設為 {val} 秒',
+			// 頁面顯示設置
+			pageDisplaySettings: '頁面顯示',
+			// 其他設置
+			otherSettingsTitle: '其他設置',
+			showCollapsedAnchorLabel: '折疊面板顯示錨點',
+			showCollapsedAnchorDesc: '當面板收起時，在側邊浮動條中顯示錨點按鈕',
+			preventAutoScrollLabel: '防止自動滾動',
+			preventAutoScrollDesc: '當 AI 生成長內容時，阻止頁面自動滾動到底部，方便閱讀上文',
+			// 介面排版開關
+			disableOutline: '禁用大綱',
+			togglePrompts: '啟用/禁用提示詞'
 		},
 		'en': {
 			panelTitle: 'Gemini Helper',
@@ -362,7 +459,7 @@
 			categoryDeleted: 'Category deleted',
 			// Language settings
 			languageLabel: 'Language',
-			languageDesc: 'Set panel display language, reload page to apply',
+			languageDesc: 'Set panel display language, takes effect immediately',
 			languageAuto: 'Auto',
 			languageZhCN: '简体中文',
 			languageZhTW: '繁體中文',
@@ -375,7 +472,31 @@
 			widthUnit: 'Unit',
 			unitPx: 'Pixels (px)',
 			unitPercent: 'Percentage (%)',
-			// Outline feature
+			unitPercent: 'Percentage (%)',
+			// Tab Settings
+			tabSettingsTitle: 'Tab Settings',
+			openNewTabLabel: 'Open New Chat in New Tab',
+			openNewTabDesc: 'Add a button to the panel header to open a new chat in a new tab',
+			newTabTooltip: 'New Chat in New Tab',
+			autoRenameTabLabel: 'Auto Rename Tab',
+			autoRenameTabDesc: 'Change browser tab title to current conversation name',
+			renameIntervalLabel: 'Detection Interval',
+			renameIntervalDesc: 'Interval for detecting conversation name changes',
+			secondsSuffix: 's',
+			showStatusLabel: 'Show Status',
+			showStatusDesc: 'Display generation status icon in tab title (⏳/✅)',
+			showNotificationLabel: 'Desktop Notification',
+			showNotificationDesc: 'Send system notification when generation completes (Gemini Business only)',
+			autoFocusLabel: 'Auto Focus Window',
+			autoFocusDesc: 'Bring window to front when generation completes (Gemini Business only)',
+			privacyModeLabel: 'Privacy Mode',
+			privacyModeDesc: 'Hide real conversation title, show decoy title (double-click panel header to toggle)',
+			privacyTitleLabel: 'Decoy Title',
+			privacyTitlePlaceholder: 'e.g., Google, Work Document',
+			titleFormatLabel: 'Title Format',
+			titleFormatDesc: 'Custom title format, supports placeholders: {status}, {title}, {model}',
+			notificationTitle: '✅ {site} Generation Complete',
+			notificationBody: 'Click to view results',
 			tabOutline: 'Outline',
 			outlineEmpty: 'No outline content',
 			outlineRefresh: 'Refresh',
@@ -403,7 +524,8 @@
 			tabOrderDesc: 'Adjust the display order of panel tabs',
 			moveUp: 'Move Up',
 			moveDown: 'Move Down',
-			// Reading History Settings
+			// Reading Navigation Settings
+			readingNavigationSettings: 'Reading Navigation',
 			anchorSettings: 'Reading History',
 			anchorPersistence: 'Enable Reading History',
 			anchorPersistenceDesc: 'Automatically remember reading position',
@@ -414,7 +536,23 @@
 			daysSuffix: 'Days',
 			cleanupInfinite: 'Infinite',
 			restoredPosition: 'Resumed last position',
-			cleanupDone: 'Expired data cleaned'
+			cleanupDone: 'Expired data cleaned',
+			// Outline Advanced Settings
+			outlineAutoUpdateLabel: 'Auto-update outline during conversation',
+			outlineAutoUpdateDesc: 'Automatically refresh outline when AI generates content',
+			outlineUpdateIntervalLabel: 'Update interval (seconds)',
+			outlineIntervalUpdated: 'Interval set to {val} seconds',
+			// Page Display Settings
+			pageDisplaySettings: 'Page Display',
+			// Other Settings
+			otherSettingsTitle: 'Other Settings',
+			showCollapsedAnchorLabel: 'Show anchor when collapsed',
+			showCollapsedAnchorDesc: 'Display anchor button in sidebar when panel is collapsed',
+			preventAutoScrollLabel: 'Prevent auto-scroll',
+			preventAutoScrollDesc: 'Stop page from auto-scrolling to bottom during AI generation',
+			// Interface Toggle
+			disableOutline: 'Disable Outline',
+			togglePrompts: 'Toggle Prompts'
 		}
 	};
 
@@ -505,6 +643,81 @@
 			const urlWithoutQuery = window.location.href.split('?')[0];
 			const parts = urlWithoutQuery.split('/').filter(p => p);
 			return parts.length > 0 ? parts[parts.length - 1] : 'default';
+		}
+
+		/**
+		 * 是否支持在新标签页打开新对话
+		 * @returns {boolean}
+		 */
+		supportsNewTab() { return true; }
+
+		/**
+		 * 获取新标签页打开的 URL
+		 * @returns {string}
+		 */
+		getNewTabUrl() { return window.location.origin; }
+
+		/**
+		 * 是否支持标签页重命名
+		 * @returns {boolean}
+		 */
+		supportsTabRename() { return true; }
+
+		/**
+		 * 获取当前会话/对话名称（用于标签页重命名）
+		 * @returns {string|null}
+		 */
+		getSessionName() {
+			// 默认实现：尝试从 document.title 中提取
+			const title = document.title;
+			if (title) {
+				// 去除站点名称后缀，如 "对话标题 - Gemini"
+				const parts = title.split(' - ');
+				if (parts.length > 1) {
+					return parts.slice(0, -1).join(' - ').trim();
+				}
+				return title.trim();
+			}
+			return null;
+		}
+
+		/**
+		 * 判断当前是否处于新对话页面（未发起任何对话）
+		 * 新对话页面不应使用旧会话标题更新标签页、不应记录阅读历史
+		 * @returns {boolean}
+		 */
+		isNewConversation() {
+			return false;
+		}
+
+		/**
+		 * 检测 AI 是否正在生成响应
+		 * @returns {boolean}
+		 */
+		isGenerating() {
+			// 默认实现：子类应覆盖此方法
+			return false;
+		}
+
+		/**
+		 * 获取当前使用的模型名称
+		 * @returns {string|null}
+		 */
+		getModelName() {
+			// 默认实现：子类应覆盖此方法
+			return null;
+		}
+
+		/**
+		 * 获取网络监控配置（用于后台任务完成检测）
+		 * 子类可覆盖此方法提供站点特定的配置
+		 * @returns {{
+		 *   urlPatterns: string[],      // 要监控的 URL 模式（包含匹配）
+		 *   silenceThreshold: number    // 静默判定时间（毫秒）
+		 * }|null} 返回 null 表示不启用网络监控
+		 */
+		getNetworkMonitorConfig() {
+			return null;
 		}
 
 		/**
@@ -1071,6 +1284,26 @@
 			return { primary: '#4285f4', secondary: '#34a853' };
 		}
 
+		getNewTabUrl() {
+			return 'https://gemini.google.com/app';
+		}
+
+		isNewConversation() {
+			const path = window.location.pathname;
+			return path === '/app' || path === '/app/';
+		}
+
+		getSessionName() {
+			// 从侧边栏活动对话标题获取
+			const titleEl = document.querySelector('.conversation-title');
+			if (titleEl) {
+				const name = titleEl.textContent?.trim();
+				if (name) return name;
+			}
+			// 回退到基类默认实现（从 document.title 提取）
+			return super.getSessionName();
+		}
+
 		getNewChatButtonSelectors() {
 			return [
 				'.new-chat-button',
@@ -1196,6 +1429,54 @@
 			return outline;
 		}
 
+		/**
+		 * 检测 AI 是否正在生成响应
+		 * Gemini 标准版：检查输入框右下角是否显示停止图标
+		 * @returns {boolean}
+		 */
+		isGenerating() {
+			// 检查是否存在 fonticon="stop" 的 mat-icon（停止按钮）
+			const stopIcon = document.querySelector('mat-icon[fonticon="stop"]');
+			if (stopIcon && stopIcon.offsetParent !== null) {
+				return true;
+			}
+			return false;
+		}
+
+		/**
+		 * 获取当前使用的模型名称
+		 * Gemini 标准版：从页面 UI 中提取模型名称
+		 * @returns {string|null}
+		 */
+		getModelName() {
+			// 从 .input-area-switch-label 的第一个 span 获取模型名称
+			const switchLabel = document.querySelector('.input-area-switch-label');
+			if (switchLabel) {
+				const firstSpan = switchLabel.querySelector('span');
+				if (firstSpan && firstSpan.textContent) {
+					const text = firstSpan.textContent.trim();
+					if (text.length > 0 && text.length <= 20) {
+						return text;
+					}
+				}
+			}
+			return null;
+		}
+
+		// ============= 网络监控配置（用于后台任务完成检测） =============
+
+		/**
+		 * Gemini 普通版的网络监控配置
+		 * 由于浏览器对后台标签页的 DOM 渲染节流，需要通过 Hook Fetch 从网络层检测任务完成
+		 */
+		getNetworkMonitorConfig() {
+			return {
+				// 注意：不要使用 batchexecute，它是通用 RPC 方法，会在后台频繁调用
+				urlPatterns: ['BardFrontendService', 'StreamGenerate'],
+				silenceThreshold: 3000
+			};
+		}
+
 
 		// ============= 模型锁定配置 =============
 		getDefaultLockSettings() {
@@ -1236,6 +1517,16 @@
 
 		getThemeColors() {
 			return { primary: '#4285f4', secondary: '#34a853' };
+		}
+
+		getNewTabUrl() {
+			return 'https://business.gemini.google';
+		}
+
+		supportsTabRename() { return true; }
+
+		isNewConversation() {
+			return !window.location.pathname.includes('/session/');
 		}
 
 		// 排除侧边栏 (mat-sidenav, mat-drawer) 中的 Shadow DOM
@@ -1473,8 +1764,98 @@
 		}
 
 
-		// ============= 模型锁定配置 =============
+		/**
+		 * 检测 AI 是否正在生成响应
+		 * Gemini Business：检查 Shadow DOM 中的 "Stop" 按钮或 loading 指示器
+		 * @returns {boolean}
+		 */
+		isGenerating() {
+			// 递归在 Shadow DOM 中搜索
+			const findInShadow = (root, depth = 0) => {
+				if (depth > 10) return false;
 
+				// 检查当前层级
+				const stopButton = root.querySelector(
+					'button[aria-label*="Stop"], button[aria-label*="停止"], ' +
+					'[data-test-id="stop-button"], .stop-button, md-icon-button[aria-label*="Stop"]'
+				);
+				if (stopButton && stopButton.offsetParent !== null) {
+					return true;
+				}
+
+				const spinner = root.querySelector(
+					'mat-spinner, md-spinner, .loading-spinner, [role="progressbar"], ' +
+					'.generating-indicator, .response-loading'
+				);
+				if (spinner && spinner.offsetParent !== null) {
+					return true;
+				}
+
+				// 递归搜索 Shadow DOM
+				const elements = root.querySelectorAll('*');
+				for (const el of elements) {
+					if (el.shadowRoot) {
+						if (findInShadow(el.shadowRoot, depth + 1)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			};
+
+			return findInShadow(document);
+		}
+
+		/**
+		 * 获取当前使用的模型名称
+		 * Gemini Business：从 Shadow DOM 中提取模型名称
+		 * @returns {string|null}
+		 */
+		getModelName() {
+			// 递归在 Shadow DOM 中搜索模型选择器
+			const findInShadow = (root, depth = 0) => {
+				if (depth > 10) return null;
+
+				// 检查模型选择器
+				const modelSelectors = [
+					'#model-selector-menu-anchor',
+					'.action-model-selector',
+					'.model-selector',
+					'[data-test-id="model-selector"]',
+					'.current-model'
+				];
+
+				for (const selector of modelSelectors) {
+					const el = root.querySelector(selector);
+					if (el && el.textContent) {
+						const text = el.textContent.trim();
+						// 提取模型关键字（支持带版本号的如"2.5 Pro"，也支持不带版本号的如"自动"）
+						const modelMatch = text.match(/(\d+\.?\d*\s*)?(Pro|Flash|Ultra|Nano|Gemini|auto|自动)/i);
+						if (modelMatch) {
+							return modelMatch[0].trim();
+						}
+						if (text.length <= 20 && text.length > 0) {
+							return text;
+						}
+					}
+				}
+
+				// 递归搜索 Shadow DOM
+				const elements = root.querySelectorAll('*');
+				for (const el of elements) {
+					if (el.shadowRoot) {
+						const result = findInShadow(el.shadowRoot, depth + 1);
+						if (result) return result;
+					}
+				}
+				return null;
+			};
+
+			return findInShadow(document);
+		}
+
+
+		// ============= 模型锁定配置 =============
 
 
 		getDefaultLockSettings() {
@@ -1525,10 +1906,11 @@
 					const headings = root.querySelectorAll(headingSelector);
 					headings.forEach(heading => {
 						// 只匹配包含 data-markdown-start-index 的标题（排除 logo 等非 AI 回复内容）
-						const span = heading.querySelector('span[data-markdown-start-index]');
-						if (span) {
+						// 标题内可能包含多个 span，需要遍历所有 span 并拼接文本
+						const spans = heading.querySelectorAll('span[data-markdown-start-index]');
+						if (spans.length > 0) {
 							const level = parseInt(heading.tagName[1], 10);
-							const text = span.textContent.trim();
+							const text = Array.from(spans).map(s => s.textContent.trim()).join('');
 							if (text) {
 								outline.push({ level, text, element: heading });
 							}
@@ -1563,6 +1945,15 @@
 
 		getThemeColors() {
 			return { primary: '#667eea', secondary: '#764ba2' };
+		}
+
+		getNewTabUrl() {
+			return 'https://www.genspark.ai';
+		}
+
+		isNewConversation() {
+			const path = window.location.pathname;
+			return path === '/' || path === '/agents' || path === '/agents/';
 		}
 
 		getWidthSelectors() {
@@ -1624,6 +2015,252 @@
 
 		supportsScrollLock() {
 			return false;
+		}
+	}
+
+	/**
+	 * 标签页重命名管理器
+	 * 根据当前对话名称自动更新浏览器标签页标题
+	*/
+	class TabRenameManager {
+		constructor(adapter, settings, i18nFunc = null) {
+			this.adapter = adapter;
+			this.settings = settings;
+			this.t = i18nFunc || ((key) => key);
+			this.lastSessionName = null;
+			this.intervalId = null;
+			this.networkMonitor = null;
+			this.isRunning = false;
+
+			// AI 生成状态（简化的状态机）
+			// 'idle' | 'generating' | 'completed'
+			this._aiState = 'idle';
+			this._lastAiState = 'idle';
+		}
+
+		/**
+		 * 启动自动重命名
+		 */
+		start() {
+			if (this.isRunning) return;
+			if (!this.adapter.supportsTabRename()) return;
+
+			this.isRunning = true;
+			this.updateTabName();
+
+			// 启动网络监控（用于后台检测）
+			this._networkConfig = this.adapter.getNetworkMonitorConfig?.();
+			if (typeof NetworkMonitor !== 'undefined' && this._networkConfig) {
+				this._initNetworkMonitor();
+			}
+
+			// 定时更新标签页标题
+			const intervalMs = (this.settings.tabSettings?.renameInterval || 5) * 1000;
+			this.intervalId = setInterval(() => this.updateTabName(), intervalMs);
+		}
+
+		/**
+		 * 初始化网络监控
+		 */
+		_initNetworkMonitor() {
+			if (this.networkMonitor || !this._networkConfig) return;
+
+			this.networkMonitor = new NetworkMonitor({
+				urlPatterns: this._networkConfig.urlPatterns,
+				silenceThreshold: this._networkConfig.silenceThreshold || 3000,
+				onStart: () => this._setAiState('generating'),
+				onComplete: () => this._onAiComplete()
+			});
+			this.networkMonitor.start();
+		}
+
+		/**
+		 * 设置 AI 状态
+		 */
+		_setAiState(state) {
+			this._lastAiState = this._aiState;
+			this._aiState = state;
+		}
+
+		/**
+		 * AI 任务完成处理（由 NetworkMonitor 触发）
+		 */
+		_onAiComplete() {
+			const wasGenerating = this._aiState === 'generating';
+			this._setAiState('completed');
+
+			// 只在后台且之前正在生成时触发通知
+			if (wasGenerating && document.hidden) {
+				this._sendCompletionNotification();
+			}
+
+			// 强制更新标签页标题
+			this.updateTabName(true);
+		}
+
+		/**
+		 * 发送完成通知
+		 */
+		_sendCompletionNotification() {
+			const tabSettings = this.settings.tabSettings || {};
+
+			if (tabSettings.showNotification && typeof GM_notification !== 'undefined') {
+				GM_notification({
+					title: this.t('notificationTitle').replace('{site}', this.adapter.getName()),
+					text: this.lastSessionName || this.t('notificationBody'),
+					timeout: 5000,
+					onclick: () => window.focus()
+				});
+			}
+
+			if (tabSettings.autoFocus) {
+				window.focus();
+			}
+		}
+
+		/**
+		 * 获取当前是否正在生成
+		 */
+		_isGenerating() {
+			// 如果已确认完成，返回 false
+			if (this._aiState === 'completed') return false;
+			// 否则结合网络状态和 DOM 检测
+			return this._aiState === 'generating' || this.adapter.isGenerating();
+		}
+
+		/**
+		 * 停止网络监控
+		 */
+		_stopNetworkMonitor() {
+			if (this.networkMonitor) {
+				this.networkMonitor.stop();
+				this.networkMonitor = null;
+			}
+		}
+
+		/**
+		 * 停止自动重命名
+		 */
+		stop() {
+			if (!this.isRunning) return;
+
+			this.isRunning = false;
+
+			if (this.intervalId) {
+				clearInterval(this.intervalId);
+				this.intervalId = null;
+			}
+
+			this._stopNetworkMonitor();
+		}
+
+		/**
+		 * 更新检测频率
+		 */
+		setInterval(intervalSeconds) {
+			if (!this.isRunning) return;
+
+			const intervalMs = intervalSeconds * 1000;
+			if (this.intervalId) {
+				clearInterval(this.intervalId);
+			}
+			this.intervalId = setInterval(() => this.updateTabName(), intervalMs);
+		}
+
+		/**
+		 * 切换隐私模式
+		 */
+		togglePrivacyMode() {
+			const tabSettings = this.settings.tabSettings || {};
+			tabSettings.privacyMode = !tabSettings.privacyMode;
+			this.settings.tabSettings = tabSettings;
+			this.updateTabName(true);
+			return tabSettings.privacyMode;
+		}
+
+		/**
+		 * 更新标签页名称
+		 */
+		updateTabName(force = false) {
+			if (!this.adapter.supportsTabRename()) return;
+
+			const tabSettings = this.settings.tabSettings || {};
+
+			// 隐私模式
+			if (tabSettings.privacyMode) {
+				document.title = tabSettings.privacyTitle || 'Google';
+				return;
+			}
+
+			// 获取会话名称（防止读取被污染的 title）
+			const sessionName = this._getCleanSessionName(tabSettings);
+
+			// 检查生成状态
+			const isGenerating = this._isGenerating();
+
+			// DOM 检测的状态变更通知（仅用于没有网络监控的站点）
+			if (this._lastAiState === 'generating' && !isGenerating && document.hidden && this._aiState !== 'completed') {
+				this._sendCompletionNotification();
+			}
+			this._lastAiState = isGenerating ? 'generating' : 'idle';
+
+			// 构建标题
+			const statusPrefix = (tabSettings.showStatus !== false)
+				? (isGenerating ? '⏳ ' : '✅ ')
+				: '';
+
+			const format = tabSettings.titleFormat || '{status}{title}';
+			const modelName = format.includes('{model}')
+				? (this.adapter.getModelName() || '')
+				: '';
+
+			let finalTitle = format
+				.replace('{status}', statusPrefix)
+				.replace('{title}', sessionName || this.adapter.getName())
+				.replace('{model}', modelName ? `[${modelName}] ` : '')
+				.replace(/\s+/g, ' ')
+				.trim();
+
+			if (finalTitle && (force || finalTitle !== document.title)) {
+				document.title = finalTitle;
+			}
+		}
+
+		/**
+		 * 获取干净的会话名称（过滤被污染的标题）
+		 */
+		_getCleanSessionName(tabSettings) {
+			// 新对话页面：清除旧会话标题，避免使用之前的标题
+			if (this.adapter.isNewConversation()) {
+				this.lastSessionName = null;
+				return null;
+			}
+
+			let sessionName = this.adapter.getSessionName();
+
+			// 检测污染
+			const isPolluted = (name) => {
+				if (!name) return false;
+				if (/^[⏳✅]/.test(name)) return true;
+				if (/\[[\w\s.]+\]/.test(name)) return true;
+				if (name === (tabSettings.privacyTitle || 'Google')) return true;
+				return false;
+			};
+
+			if (isPolluted(sessionName)) {
+				sessionName = this.lastSessionName;
+			} else if (sessionName && sessionName !== this.lastSessionName) {
+				this.lastSessionName = sessionName;
+			}
+
+			return this.lastSessionName;
+		}
+
+		/**
+		 * 获取当前状态
+		 */
+		isActive() {
+			return this.isRunning;
 		}
 	}
 
@@ -2198,6 +2835,9 @@
 
 		saveProgress() {
 			if (!this.isRecording) return;
+			// 新对话页面不记录阅读历史
+			if (this.scrollManager.siteAdapter.isNewConversation()) return;
+
 			const scrollTop = this.scrollManager.scrollTop;
 			if (scrollTop < 0) return;
 
@@ -3360,6 +4000,7 @@
 				tabOrder: tabOrder,
 				preventAutoScroll: GM_getValue('gemini_prevent_auto_scroll', false),
 				showCollapsedAnchor: GM_getValue('gemini_show_collapsed_anchor', true),
+				tabSettings: { ...DEFAULT_TAB_SETTINGS, ...GM_getValue(SETTING_KEYS.TAB_SETTINGS, {}) },
 				readingHistory: { ...DEFAULT_READING_HISTORY_SETTINGS, ...GM_getValue(SETTING_KEYS.READING_HISTORY, {}) }
 			};
 		}
@@ -3370,6 +4011,9 @@
 
 			// 保存模型锁定设置（保存整个字典）
 			GM_setValue(SETTING_KEYS.MODEL_LOCK, this.settings.modelLockConfig);
+
+			// 保存标签页设置
+			GM_setValue(SETTING_KEYS.TAB_SETTINGS, this.settings.tabSettings);
 
 			// 保存页面宽度设置
 			const allWidthSettings = GM_getValue(SETTING_KEYS.PAGE_WIDTH, DEFAULT_WIDTH_SETTINGS);
@@ -3468,6 +4112,12 @@
 			// 创建并应用页面宽度样式
 			this.widthStyleManager = new WidthStyleManager(this.siteAdapter, this.settings.pageWidth);
 			this.widthStyleManager.apply();
+
+			// 初始化标签页重命名管理器
+			this.tabRenameManager = new TabRenameManager(this.siteAdapter, this.settings, (key) => this.t(key));
+			if (this.settings.tabSettings?.autoRenameTab) {
+				this.tabRenameManager.start();
+			}
 
 			// 监听自定义大纲自动刷新事件
 			window.addEventListener('gemini-helper-outline-auto-refresh', () => {
@@ -3865,11 +4515,11 @@
 		createUI() {
 			const existingPanel = document.getElementById('gemini-helper-panel');
 			const existingBar = document.querySelector('.selected-prompt-bar');
-			const existingBtn = document.querySelector('.quick-prompt-btn');
+			const existingBtnGroup = document.getElementById('quick-btn-group');
 
 			if (existingPanel) existingPanel.remove();
 			if (existingBar) existingBar.remove();
-			if (existingBtn) existingBtn.remove();
+			if (existingBtnGroup) existingBtnGroup.remove();
 
 			const panel = createElement('div', { id: 'gemini-helper-panel' });
 
@@ -3898,11 +4548,54 @@
 			});
 			const toggleBtn = createElement('button', { className: 'prompt-panel-btn', id: 'toggle-panel', title: this.t('collapse') }, '−');
 			// 注意：toggleBtn 的事件监听在 bindEvents 中统一绑定，避免重复绑定
+			// 新建标签页按钮
+			// 新标签页按钮 (只有在设置开启且站点支持时显示)
+			if (this.settings.tabSettings?.openInNewTab && this.siteAdapter.supportsNewTab()) {
+				const newTabBtn = createElement('button', {
+					className: 'prompt-panel-btn',
+					id: 'new-tab-btn',
+					title: this.t('newTabTooltip'),
+					style: 'margin-right: 2px;'
+				}, '+');
+				newTabBtn.addEventListener('click', () => {
+					const url = this.siteAdapter.getNewTabUrl();
+					if (url) {
+						window.open(url, '_blank');
+					}
+				});
+				controls.appendChild(newTabBtn);
+			}
+
 			controls.appendChild(refreshBtn);
 			controls.appendChild(toggleBtn);
 
 			header.appendChild(title);
 			header.appendChild(controls);
+
+			// 双击面板标题切换隐私模式 (Boss Key)
+			title.style.cursor = 'pointer';
+			title.addEventListener('dblclick', () => {
+				if (this.tabRenameManager) {
+					const isPrivate = this.tabRenameManager.togglePrivacyMode();
+					this.saveSettings();
+					// 同步设置面板中的隐私模式开关状态
+					const privacyToggle = document.getElementById('toggle-privacy-mode');
+					if (privacyToggle) {
+						privacyToggle.classList.toggle('active', isPrivate);
+					}
+					// 同步伪装标题输入框的禁用状态
+					const privacyTitleItem = privacyToggle?.closest('.setting-item')?.nextElementSibling;
+					if (privacyTitleItem && privacyTitleItem.classList.contains('setting-item')) {
+						const privacyTitleInput = privacyTitleItem.querySelector('input');
+						if (privacyTitleInput) {
+							privacyTitleInput.disabled = !isPrivate;
+							privacyTitleItem.style.opacity = isPrivate ? '1' : '0.5';
+							privacyTitleItem.style.pointerEvents = isPrivate ? 'auto' : 'none';
+						}
+					}
+					this.showToast(isPrivate ? '🔒 隐私模式已开启' : '🔓 隐私模式已关闭');
+				}
+			});
 
 			// Tab 栏
 			const tabs = createElement('div', { className: 'prompt-panel-tabs' });
@@ -4214,6 +4907,7 @@
 
 
 			// 2. 模型锁定设置 (可折叠)
+			let lockSection = null;
 			if (this.registry && this.registry.adapters) {
 				const adaptersWithLock = this.registry.adapters;
 				if (adaptersWithLock.length > 0) {
@@ -4278,8 +4972,7 @@
 						lockContainer.appendChild(row);
 					});
 
-					const lockSection = this.createCollapsibleSection(this.t('modelLockTitle'), lockContainer);
-					content.appendChild(lockSection);
+					lockSection = this.createCollapsibleSection(this.t('modelLockTitle'), lockContainer);
 				}
 			}
 
@@ -4367,8 +5060,30 @@
 			widthValueItem.appendChild(widthControls);
 			widthContainer.appendChild(widthValueItem);
 
-			const widthSection = this.createCollapsibleSection(this.t('pageWidthLabel'), widthContainer);
-			content.appendChild(widthSection);
+			// 防止自动滚动（从其他设置移入）
+			const scrollLockItem = createElement('div', { className: 'setting-item' });
+			const scrollLockInfo = createElement('div', { className: 'setting-item-info' });
+			scrollLockInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('preventAutoScrollLabel')));
+			scrollLockInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('preventAutoScrollDesc')));
+
+			const scrollLockToggle = createElement('div', {
+				className: 'setting-toggle' + (this.settings.preventAutoScroll ? ' active' : ''),
+				id: 'toggle-scroll-lock'
+			});
+			scrollLockToggle.addEventListener('click', () => {
+				this.settings.preventAutoScroll = !this.settings.preventAutoScroll;
+				scrollLockToggle.classList.toggle('active', this.settings.preventAutoScroll);
+				this.saveSettings();
+				if (this.scrollLockManager) {
+					this.scrollLockManager.setEnabled(this.settings.preventAutoScroll);
+				}
+				this.showToast(this.settings.preventAutoScroll ? this.t('settingOn') : this.t('settingOff'));
+			});
+			scrollLockItem.appendChild(scrollLockInfo);
+			scrollLockItem.appendChild(scrollLockToggle);
+			widthContainer.appendChild(scrollLockItem);
+
+			const widthSection = this.createCollapsibleSection(this.t('pageDisplaySettings'), widthContainer);
 
 
 			// 4. 界面排版 (可折叠)
@@ -4401,7 +5116,7 @@
 					outlineToggle.addEventListener('click', (e) => {
 						e.stopPropagation();
 						this.settings.outline.enabled = !this.settings.outline.enabled;
-						outlineToggle.title = this.settings.outline.enabled ? '禁用大纲' : '启用大纲';
+						outlineToggle.title = this.settings.outline.enabled ? this.t('disableOutline') : this.t('enableOutline');
 						outlineToggle.classList.toggle('active', this.settings.outline.enabled);
 						this.saveSettings();
 
@@ -4426,7 +5141,7 @@
 						className: 'setting-toggle' + (this.settings.prompts?.enabled ? ' active' : ''),
 						id: 'toggle-prompts-inline',
 						style: 'transform: scale(0.8); margin-right: 12px;',
-						title: '启用/禁用提示词'
+						title: this.t('togglePrompts')
 					});
 					promptsToggle.addEventListener('click', (e) => {
 						e.stopPropagation();
@@ -4512,7 +5227,6 @@
 			});
 
 			const layoutSection = this.createCollapsibleSection(this.t('tabOrderSettings'), layoutContainer);
-			content.appendChild(layoutSection);
 
 			// 4.5 阅读历史设置 (新增独立版块)
 			const anchorContainer = createElement('div', {});
@@ -4615,8 +5329,35 @@
 			anchorContainer.appendChild(anchorAutoRestoreItem);
 			anchorContainer.appendChild(anchorCleanupItem);
 
-			const anchorSection = this.createCollapsibleSection(this.t('readingHistorySettings'), anchorContainer);
-			content.appendChild(anchorSection);
+			// 折叠面板显示锚点（从其他设置移入）
+			const showAnchorItem = createElement('div', { className: 'setting-item' });
+			const showAnchorInfo = createElement('div', { className: 'setting-item-info' });
+			showAnchorInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('showCollapsedAnchorLabel')));
+			showAnchorInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('showCollapsedAnchorDesc')));
+
+			const showAnchorToggle = createElement('div', {
+				className: 'setting-toggle' + (this.settings.showCollapsedAnchor ? ' active' : ''),
+				id: 'toggle-show-collapsed-anchor'
+			});
+			showAnchorToggle.addEventListener('click', () => {
+				this.settings.showCollapsedAnchor = !this.settings.showCollapsedAnchor;
+				showAnchorToggle.classList.toggle('active', this.settings.showCollapsedAnchor);
+				this.saveSettings();
+
+				// 实时更新UI
+				GM_setValue('gemini_show_collapsed_anchor', this.settings.showCollapsedAnchor);
+				const quickAnchor = document.getElementById('quick-anchor-btn');
+				if (quickAnchor) {
+					quickAnchor.style.display = this.settings.showCollapsedAnchor ? 'flex' : 'none';
+				}
+
+				this.showToast(this.settings.showCollapsedAnchor ? this.t('settingOn') : this.t('settingOff'));
+			});
+			showAnchorItem.appendChild(showAnchorInfo);
+			showAnchorItem.appendChild(showAnchorToggle);
+			anchorContainer.appendChild(showAnchorItem);
+
+			const anchorSection = this.createCollapsibleSection(this.t('readingNavigationSettings'), anchorContainer);
 
 			// 5. 大纲详细设置 (高级配置)
 			const outlineSettingsContainer = createElement('div', {});
@@ -4624,8 +5365,8 @@
 			// 自动更新开关
 			const autoUpdateItem = createElement('div', { className: 'setting-item' });
 			const autoUpdateInfo = createElement('div', { className: 'setting-item-info' });
-			autoUpdateInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '对话期间自动更新大纲'));
-			autoUpdateInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, 'AI 生成内容时自动刷新目录结构'));
+			autoUpdateInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('outlineAutoUpdateLabel')));
+			autoUpdateInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('outlineAutoUpdateDesc')));
 
 			const autoUpdateToggle = createElement('div', {
 				className: 'setting-toggle' + (this.settings.outline.autoUpdate ? ' active' : ''),
@@ -4645,7 +5386,7 @@
 			// 更新间隔
 			const updateIntervalItem = createElement('div', { className: 'setting-item' });
 			const updateIntervalInfo = createElement('div', { className: 'setting-item-info' });
-			updateIntervalInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '更新检测间隔 (秒)'));
+			updateIntervalInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('outlineUpdateIntervalLabel')));
 			const updateIntervalControls = createElement('div', { className: 'setting-controls' });
 			const updateIntervalInput = createElement('input', {
 				type: 'number',
@@ -4661,73 +5402,285 @@
 				this.settings.outline.updateInterval = val;
 				this.saveSettings();
 				// OutlineManager 在触发下一次更新时会自动使用新间隔
-				this.showToast(`间隔已设为 ${val} 秒`);
+				this.showToast(this.t('outlineIntervalUpdated').replace('{val}', val));
 			});
 			updateIntervalControls.appendChild(updateIntervalInput);
 			updateIntervalItem.appendChild(updateIntervalInfo);
 			updateIntervalItem.appendChild(updateIntervalControls);
 			outlineSettingsContainer.appendChild(updateIntervalItem);
 
-			const outlineSettingsSection = this.createCollapsibleSection('大纲设置', outlineSettingsContainer, { defaultExpanded: false });
-			content.appendChild(outlineSettingsSection);
+			const outlineSettingsSection = this.createCollapsibleSection(this.t('outlineSettings'), outlineSettingsContainer, { defaultExpanded: false });
 
 
-			// 6. 其他设置 (折叠面板)
+			// 6. 标签页设置 (折叠面板)
+			const tabSettingsContainer = createElement('div', {});
+
+			// 6.1 新标签页打开开关
+			if (this.siteAdapter.supportsNewTab()) {
+				const newTabItem = createElement('div', { className: 'setting-item' });
+				const newTabInfo = createElement('div', { className: 'setting-item-info' });
+				newTabInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('openNewTabLabel')));
+				newTabInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('openNewTabDesc')));
+
+				const newTabToggle = createElement('div', {
+					className: 'setting-toggle' + (this.settings.tabSettings?.openInNewTab ? ' active' : ''),
+					id: 'toggle-new-tab'
+				});
+				newTabToggle.addEventListener('click', () => {
+					this.settings.tabSettings.openInNewTab = !this.settings.tabSettings.openInNewTab;
+					newTabToggle.classList.toggle('active', this.settings.tabSettings.openInNewTab);
+					this.saveSettings();
+					this.createUI();
+					this.bindEvents();
+					if (this.currentTab === 'settings') {
+						this.switchTab('settings');
+					}
+					this.showToast(this.settings.tabSettings.openInNewTab ? this.t('settingOn') : this.t('settingOff'));
+				});
+
+				newTabItem.appendChild(newTabInfo);
+				newTabItem.appendChild(newTabToggle);
+				tabSettingsContainer.appendChild(newTabItem);
+			}
+
+			// 6.2 自动重命名标签页开关 (仅支持的站点显示)
+			if (this.siteAdapter.supportsTabRename()) {
+				const renameTabItem = createElement('div', { className: 'setting-item' });
+				const renameTabInfo = createElement('div', { className: 'setting-item-info' });
+				renameTabInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('autoRenameTabLabel')));
+				renameTabInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('autoRenameTabDesc')));
+
+				const renameTabToggle = createElement('div', {
+					className: 'setting-toggle' + (this.settings.tabSettings?.autoRenameTab ? ' active' : ''),
+					id: 'toggle-auto-rename-tab'
+				});
+				renameTabItem.appendChild(renameTabInfo);
+				renameTabItem.appendChild(renameTabToggle);
+				tabSettingsContainer.appendChild(renameTabItem);
+
+				// 6.3 检测频率
+				const intervalItem = createElement('div', { className: 'setting-item' });
+				const intervalInfo = createElement('div', { className: 'setting-item-info' });
+				intervalInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('renameIntervalLabel')));
+				intervalInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('renameIntervalDesc')));
+
+				const intervalControls = createElement('div', { className: 'setting-controls' });
+				const intervalSelect = createElement('select', { className: 'setting-select', id: 'select-rename-interval' });
+				const intervalOptions = [1, 3, 5, 10, 30, 60];
+				intervalOptions.forEach(val => {
+					const option = createElement('option', { value: val }, `${val} ${this.t('secondsSuffix')}`);
+					if (this.settings.tabSettings?.renameInterval === val) option.selected = true;
+					intervalSelect.appendChild(option);
+				});
+				intervalSelect.addEventListener('change', () => {
+					this.settings.tabSettings.renameInterval = parseInt(intervalSelect.value);
+					this.saveSettings();
+					if (this.tabRenameManager && this.tabRenameManager.isActive()) {
+						this.tabRenameManager.setInterval(this.settings.tabSettings.renameInterval);
+					}
+					this.showToast(`${this.t('renameIntervalLabel')}: ${intervalSelect.value}${this.t('secondsSuffix')}`);
+				});
+
+				intervalControls.appendChild(intervalSelect);
+				intervalItem.appendChild(intervalInfo);
+				intervalItem.appendChild(intervalControls);
+				tabSettingsContainer.appendChild(intervalItem);
+
+				// 定义状态更新函数
+				const updateIntervalState = () => {
+					const isEnabled = this.settings.tabSettings.autoRenameTab;
+					intervalSelect.disabled = !isEnabled;
+					intervalItem.style.opacity = isEnabled ? '1' : '0.5';
+					intervalItem.style.pointerEvents = isEnabled ? 'auto' : 'none';
+				};
+
+				// 初始化状态
+				updateIntervalState();
+
+				// 绑定开关点击事件
+				renameTabToggle.addEventListener('click', () => {
+					this.settings.tabSettings.autoRenameTab = !this.settings.tabSettings.autoRenameTab;
+					renameTabToggle.classList.toggle('active', this.settings.tabSettings.autoRenameTab);
+					this.saveSettings();
+
+					// 更新检测频率项状态
+					updateIntervalState();
+
+					// 启动/停止 TabRenameManager
+					if (this.tabRenameManager) {
+						if (this.settings.tabSettings.autoRenameTab) {
+							this.tabRenameManager.start();
+						} else {
+							this.tabRenameManager.stop();
+						}
+					}
+
+					this.showToast(this.settings.tabSettings.autoRenameTab ? this.t('settingOn') : this.t('settingOff'));
+				});
+			}
+
+			// 6.4 显示生成状态 (showStatus)
+			if (this.siteAdapter.supportsTabRename()) {
+				const showStatusItem = createElement('div', { className: 'setting-item' });
+				const showStatusInfo = createElement('div', { className: 'setting-item-info' });
+				showStatusInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('showStatusLabel')));
+				showStatusInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('showStatusDesc')));
+
+				const showStatusToggle = createElement('div', {
+					className: 'setting-toggle' + (this.settings.tabSettings?.showStatus !== false ? ' active' : ''),
+					id: 'toggle-show-status'
+				});
+				showStatusToggle.addEventListener('click', () => {
+					this.settings.tabSettings.showStatus = !this.settings.tabSettings.showStatus;
+					showStatusToggle.classList.toggle('active', this.settings.tabSettings.showStatus);
+					this.saveSettings();
+					if (this.tabRenameManager) this.tabRenameManager.updateTabName(true);
+					this.showToast(this.settings.tabSettings.showStatus ? this.t('settingOn') : this.t('settingOff'));
+				});
+
+				showStatusItem.appendChild(showStatusInfo);
+				showStatusItem.appendChild(showStatusToggle);
+				tabSettingsContainer.appendChild(showStatusItem);
+			}
+
+			// 6.5 标题格式 (titleFormat)
+			if (this.siteAdapter.supportsTabRename()) {
+				const formatItem = createElement('div', { className: 'setting-item' });
+				const formatInfo = createElement('div', { className: 'setting-item-info' });
+				formatInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('titleFormatLabel')));
+				formatInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('titleFormatDesc')));
+
+				const formatInput = createElement('input', {
+					type: 'text',
+					className: 'prompt-input-title',
+					value: this.settings.tabSettings?.titleFormat || '{status}{title}',
+					style: 'width: 130px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;'
+				});
+				formatInput.addEventListener('change', () => {
+					this.settings.tabSettings.titleFormat = formatInput.value.trim() || '{status}{title}';
+					this.saveSettings();
+					if (this.tabRenameManager) this.tabRenameManager.updateTabName(true);
+				});
+
+				formatItem.appendChild(formatInfo);
+				formatItem.appendChild(formatInput);
+				tabSettingsContainer.appendChild(formatItem);
+			}
+
+			// 6.6 发送桌面通知 (showNotification)
+			if (this.siteAdapter.supportsTabRename()) {
+				const notificationItem = createElement('div', { className: 'setting-item' });
+				const notificationInfo = createElement('div', { className: 'setting-item-info' });
+				notificationInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('showNotificationLabel')));
+				notificationInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('showNotificationDesc')));
+
+				const notificationToggle = createElement('div', {
+					className: 'setting-toggle' + (this.settings.tabSettings?.showNotification ? ' active' : ''),
+					id: 'toggle-show-notification'
+				});
+				notificationToggle.addEventListener('click', () => {
+					this.settings.tabSettings.showNotification = !this.settings.tabSettings.showNotification;
+					notificationToggle.classList.toggle('active', this.settings.tabSettings.showNotification);
+					this.saveSettings();
+					this.showToast(this.settings.tabSettings.showNotification ? this.t('settingOn') : this.t('settingOff'));
+				});
+
+				notificationItem.appendChild(notificationInfo);
+				notificationItem.appendChild(notificationToggle);
+				tabSettingsContainer.appendChild(notificationItem);
+			}
+
+			// 6.7 自动窗口置顶 (autoFocus)
+			if (this.siteAdapter.supportsTabRename()) {
+				const autoFocusItem = createElement('div', { className: 'setting-item' });
+				const autoFocusInfo = createElement('div', { className: 'setting-item-info' });
+				autoFocusInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('autoFocusLabel')));
+				autoFocusInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('autoFocusDesc')));
+
+				const autoFocusToggle = createElement('div', {
+					className: 'setting-toggle' + (this.settings.tabSettings?.autoFocus ? ' active' : ''),
+					id: 'toggle-auto-focus'
+				});
+				autoFocusToggle.addEventListener('click', () => {
+					this.settings.tabSettings.autoFocus = !this.settings.tabSettings.autoFocus;
+					autoFocusToggle.classList.toggle('active', this.settings.tabSettings.autoFocus);
+					this.saveSettings();
+					this.showToast(this.settings.tabSettings.autoFocus ? this.t('settingOn') : this.t('settingOff'));
+				});
+
+				autoFocusItem.appendChild(autoFocusInfo);
+				autoFocusItem.appendChild(autoFocusToggle);
+				tabSettingsContainer.appendChild(autoFocusItem);
+			}
+
+			// 6.8 隐私模式 (privacyMode)
+			if (this.siteAdapter.supportsTabRename()) {
+				const privacyItem = createElement('div', { className: 'setting-item' });
+				const privacyInfo = createElement('div', { className: 'setting-item-info' });
+				privacyInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('privacyModeLabel')));
+				privacyInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('privacyModeDesc')));
+
+				const privacyToggle = createElement('div', {
+					className: 'setting-toggle' + (this.settings.tabSettings?.privacyMode ? ' active' : ''),
+					id: 'toggle-privacy-mode'
+				});
+
+				privacyItem.appendChild(privacyInfo);
+				privacyItem.appendChild(privacyToggle);
+				tabSettingsContainer.appendChild(privacyItem);
+
+				// 6.9 伪装标题输入框 (privacyTitle)
+				const privacyTitleItem = createElement('div', { className: 'setting-item' });
+				const privacyTitleInfo = createElement('div', { className: 'setting-item-info' });
+				privacyTitleInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('privacyTitleLabel')));
+
+				const privacyTitleInput = createElement('input', {
+					type: 'text',
+					className: 'prompt-input-title',
+					value: this.settings.tabSettings?.privacyTitle || 'Google',
+					placeholder: this.t('privacyTitlePlaceholder'),
+					style: 'width: 100px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;'
+				});
+				privacyTitleInput.addEventListener('change', () => {
+					this.settings.tabSettings.privacyTitle = privacyTitleInput.value.trim() || 'Google';
+					this.saveSettings();
+					if (this.settings.tabSettings.privacyMode && this.tabRenameManager) {
+						this.tabRenameManager.updateTabName(true);
+					}
+				});
+
+				privacyTitleItem.appendChild(privacyTitleInfo);
+				privacyTitleItem.appendChild(privacyTitleInput);
+				tabSettingsContainer.appendChild(privacyTitleItem);
+
+				// 定义状态更新函数（类似 renameInterval 的处理方式）
+				const updatePrivacyTitleState = () => {
+					const isEnabled = this.settings.tabSettings.privacyMode;
+					privacyTitleInput.disabled = !isEnabled;
+					privacyTitleItem.style.opacity = isEnabled ? '1' : '0.5';
+					privacyTitleItem.style.pointerEvents = isEnabled ? 'auto' : 'none';
+				};
+
+				// 初始化状态
+				updatePrivacyTitleState();
+
+				// 绑定隐私模式开关点击事件
+				privacyToggle.addEventListener('click', () => {
+					this.settings.tabSettings.privacyMode = !this.settings.tabSettings.privacyMode;
+					privacyToggle.classList.toggle('active', this.settings.tabSettings.privacyMode);
+					this.saveSettings();
+					if (this.tabRenameManager) this.tabRenameManager.updateTabName(true);
+					// 更新伪装标题项状态
+					updatePrivacyTitleState();
+					this.showToast(this.settings.tabSettings.privacyMode ? '🔒 ' + this.t('settingOn') : '🔓 ' + this.t('settingOff'));
+				});
+			}
+
+			const tabSettingsSection = this.createCollapsibleSection(this.t('tabSettingsTitle'), tabSettingsContainer, { defaultExpanded: false });
+
+
+			// 7. 其他设置 (折叠面板) - 仅保留站点特定功能
 			const otherSettingsContainer = createElement('div', {});
-
-			// 6.1 锚点按钮 (折叠时显示)
-			const anchorToggleItem = createElement('div', { className: 'setting-item' });
-			const anchorToggleInfo = createElement('div', { className: 'setting-item-info' });
-			anchorToggleInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '折叠面板显示锚点'));
-			anchorToggleInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, '当面板收起时，在侧边浮动条中显示锚点按钮'));
-
-			const anchorToggle = createElement('div', {
-				className: 'setting-toggle' + (this.settings.showCollapsedAnchor ? ' active' : ''),
-				id: 'toggle-show-collapsed-anchor'
-			});
-			anchorToggle.addEventListener('click', () => {
-				this.settings.showCollapsedAnchor = !this.settings.showCollapsedAnchor;
-				anchorToggle.classList.toggle('active', this.settings.showCollapsedAnchor);
-				this.saveSettings();
-
-				// 实时更新UI
-				GM_setValue('gemini_show_collapsed_anchor', this.settings.showCollapsedAnchor);
-				const quickAnchor = document.getElementById('quick-anchor-btn');
-				if (quickAnchor) {
-					quickAnchor.style.display = this.settings.showCollapsedAnchor ? 'flex' : 'none';
-				}
-
-				this.showToast(this.settings.showCollapsedAnchor ? this.t('settingOn') : this.t('settingOff'));
-			});
-			anchorToggleItem.appendChild(anchorToggleInfo);
-			anchorToggleItem.appendChild(anchorToggle);
-			otherSettingsContainer.appendChild(anchorToggleItem);
-
-
-			// 6.2 防止自动滚动开关
-			const scrollLockItem = createElement('div', { className: 'setting-item' });
-			const scrollLockInfo = createElement('div', { className: 'setting-item-info' });
-			scrollLockInfo.appendChild(createElement('div', { className: 'setting-item-label' }, '防止自动滚动'));
-			scrollLockInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, '当 AI 生成长内容时，阻止页面自动滚动到底部，方便阅读上文'));
-
-			const scrollLockToggle = createElement('div', {
-				className: 'setting-toggle' + (this.settings.preventAutoScroll ? ' active' : ''),
-				id: 'toggle-scroll-lock'
-			});
-			scrollLockToggle.addEventListener('click', () => {
-				this.settings.preventAutoScroll = !this.settings.preventAutoScroll;
-				scrollLockToggle.classList.toggle('active', this.settings.preventAutoScroll);
-				this.saveSettings();
-				if (this.scrollLockManager) {
-					this.scrollLockManager.setEnabled(this.settings.preventAutoScroll);
-				}
-				this.showToast(this.settings.preventAutoScroll ? this.t('settingOn') : this.t('settingOff'));
-			});
-
-			scrollLockItem.appendChild(scrollLockInfo);
-			scrollLockItem.appendChild(scrollLockToggle);
-			otherSettingsContainer.appendChild(scrollLockItem);
-
 
 			// Gemini Business 专属设置
 			if (this.siteAdapter instanceof GeminiBusinessAdapter) {
@@ -4750,7 +5703,23 @@
 				otherSettingsContainer.appendChild(clearItem);
 			}
 
-			const otherSettingsSection = this.createCollapsibleSection('其他设置', otherSettingsContainer, { defaultExpanded: false });
+			const otherSettingsSection = this.createCollapsibleSection(this.t('otherSettingsTitle'), otherSettingsContainer, { defaultExpanded: false });
+
+			// ========== 统一管理分类顺序 ==========
+			// 1. 通用设置（语言）- 已在上方添加
+			// 2. 标签页设置
+			if (tabSettingsSection) content.appendChild(tabSettingsSection);
+			// 3. 阅读导航
+			content.appendChild(anchorSection);
+			// 4. 大纲设置
+			content.appendChild(outlineSettingsSection);
+			// 5. 页面显示
+			content.appendChild(widthSection);
+			// 6. 模型锁定
+			if (lockSection) content.appendChild(lockSection);
+			// 7. 界面排版
+			content.appendChild(layoutSection);
+			// 8. 其他设置
 			content.appendChild(otherSettingsSection);
 
 			container.appendChild(content);
@@ -5348,6 +6317,18 @@
 					// 重置内存中的锚点状态
 					this.anchorScrollTop = null;
 					this.anchorManager.reset();
+
+					// 会话切换时立即更新标签页标题
+					if (this.tabRenameManager && this.settings.tabSettings?.autoRenameTab) {
+						// 清除缓存的会话名称，强制从新会话获取
+						this.tabRenameManager.lastSessionName = null;
+						// 多次尝试更新，因为 Gemini 可能需要时间来更新页面标题
+						[300, 800, 1500].forEach(delay => {
+							setTimeout(() => {
+								this.tabRenameManager.updateTabName(true);
+							}, delay);
+						});
+					}
 
 					// 给予页面渲染一点时间后尝试恢复
 					setTimeout(() => {

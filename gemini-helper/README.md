@@ -1,8 +1,8 @@
 # Gemini-helper
 
-> Gemini 助手：支持对话大纲（搜索/跳转/详情）、提示词管理（分类/分组/拖拽）、自动加宽页面、模型自动锁定、阅读历史自动恢复、双向锚点快速定位、中文输入修复（企业版）、多语言支持，智能适配 Gemini 标准版/企业版/Genspark
+> Gemini 助手：支持对话大纲、提示词管理、模型锁定、标签页增强（状态显示/隐私模式/生成完成通知）、阅读历史恢复、双向锚点、自动加宽页面、中文输入修复，智能适配 Gemini 标准版/企业版/Genspark
 
-> Gemini Helper: Supports conversation outline, prompt management, auto page width, model locking, reading history auto-restore, bidirectional anchor navigation, Chinese input fix, multi-language support, smart adaptation for Gemini Standard/Enterprise/Genspark
+> Gemini Helper: Supports outline navigation, prompt management, model locking, tab enhancements (status display/privacy mode/completion notification), reading history, bidirectional anchor, auto page width, Chinese input fix, smart adaptation for Gemini Standard/Enterprise/Genspark
 
 ## ✨ 功能特性
 
@@ -48,6 +48,14 @@
   - 短期“返回点”，类似浏览器后退或 `git switch -`
   - 点击大纲/顶部/底部按钮跳转时自动保存当前位置
   - 支持在两个位置间来回切换
+
+### 🏷️ 标签页增强
+
+- **生成状态显示**：标签页标题前自动显示 ⏳（生成中）或 ✅（完成）状态图标
+- **自定义标题格式**：支持 `{status}{title}[{model}]` 等占位符组合
+- **隐私模式 (Boss Key)**：一键伪装标签页标题为"Google"，隐藏对话内容
+- **生成完成通知**：后台生成完成时发送桌面通知
+- **自动窗口置顶**：生成完成后自动将浏览器窗口带回前台
 
 ### ⚙️ 设置面板
 
@@ -96,12 +104,18 @@
 
 ## 📋 [更新日志](./changelog.md)
 
-### v1.7.3
+### v1.8.1
 
-- ✨ **架构升级**：
-  - **阅读历史与锚点分离**：两套独立系统各司其职，功能边界更清晰
-  - **双向锚点跳转**：支持在两个位置间来回切换，类似 `git switch -`
-- 🛠 **技术优化**：滚动监听改为实际容器，修复锚点按钮初始状态
+- 🐛 **Bug 修复**：修复标题污染、重复通知、后台状态检测等问题
+- 🔧 **技术改进**：NetworkMonitor 始终运行、AI 状态机重构、移除 batchexecute 误判
+
+### v1.8.0
+
+- ✨ **标签页增强**：生成状态显示（⏳/✅）、自定义标题格式、模型名称识别
+- ✨ **隐私模式**：一键伪装标签页标题，双击面板标题快速切换
+- ✨ **后台行为**：生成完成时发送桌面通知、自动窗口置顶
+
+### v1.7.3
 
 ### v1.7.2
 
