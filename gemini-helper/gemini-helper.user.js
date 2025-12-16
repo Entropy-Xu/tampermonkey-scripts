@@ -5204,6 +5204,7 @@
 						this.settings.tabOrder = newOrder;
 						this.saveSettings();
 						this.createUI();
+						this.bindEvents();
 						this.switchTab('settings');
 					}
 				});
@@ -5215,6 +5216,7 @@
 						this.settings.tabOrder = newOrder;
 						this.saveSettings();
 						this.createUI();
+						this.bindEvents();
 						this.switchTab('settings');
 					}
 				});
