@@ -47,6 +47,12 @@ const input = DOMToolkit.query("input.main", { shadow: true });
 
 // 多选择器支持（返回第一个匹配）
 const el = DOMToolkit.query(["button.submit", 'input[type="submit"]']);
+
+// 使用自定义过滤函数
+const textarea = DOMToolkit.query("[contenteditable]", {
+  shadow: true,
+  filter: (el) => el.offsetParent !== null && !el.closest("#my-panel"),
+});
 ```
 
 **参数**：
@@ -56,7 +62,8 @@ const el = DOMToolkit.query(["button.submit", 'input[type="submit"]']);
 | `all` | boolean | false | 是否返回所有匹配 |
 | `shadow` | boolean | true | 是否穿透 Shadow DOM |
 | `maxDepth` | number | 15 | 最大递归深度 |
-| `useCache` | boolean | true | 是否使用缓存 |
+| `useCache` | boolean | true | 是否使用缓存（有 filter 时自动禁用） |
+| `filter` | function | null | 自定义过滤函数 `(el) => boolean` |
 
 ---
 
