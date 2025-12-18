@@ -3488,8 +3488,9 @@
                 title: this.t('conversationsSelectFolder') || 'Select folder',
             });
             this.data.folders.forEach((folder) => {
-                // 仅显示名称，避免图标重复或杂乱
-                const option = createElement('option', { value: folder.id }, folder.name);
+                // 截断过长的文件夹名称，避免下拉菜单溢出
+                const truncatedName = folder.name.length > 20 ? folder.name.slice(0, 20) + '...' : folder.name;
+                const option = createElement('option', { value: folder.id, title: folder.name }, truncatedName);
                 if (folder.id === (this.data.lastUsedFolderId || 'inbox')) {
                     option.selected = true;
                 }
