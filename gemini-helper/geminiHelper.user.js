@@ -1205,12 +1205,12 @@
         }
 
         /**
-         /**
-         * 通用模型锁定实现
-         * 基于 getModelSwitcherConfig() 返回的配置执行锁定逻辑
-         * @param {string} keyword - 目标模型关键字
-         * @param {Function} onSuccess 成功后的回调（可选）
-         */
+		 /**
+		 * 通用模型锁定实现
+		 * 基于 getModelSwitcherConfig() 返回的配置执行锁定逻辑
+		 * @param {string} keyword - 目标模型关键字
+		 * @param {Function} onSuccess 成功后的回调（可选）
+		 */
         lockModel(keyword, onSuccess = null) {
             const config = this.getModelSwitcherConfig(keyword);
             if (!config) return;
@@ -3089,6 +3089,7 @@
             this.t = config.i18n || ((k) => k);
             this.isActive = false;
             this.data = null; // 会话数据
+            this.expandedFolderId = null; // 记忆当前展开的文件夹（手风琴模式，只展开一个）
 
             this.init();
         }
@@ -3153,6 +3154,7 @@
 
         /**
          * 轻量级更新文件夹计数（不重建 UI）
+         * 同时刷新已展开文件夹的会话列表
          */
         updateFolderCount(folderId) {
             const folderItem = this.container?.querySelector(`.conversations-folder-item[data-folder-id="${folderId}"]`);
@@ -3160,6 +3162,14 @@
                 const count = Object.values(this.data.conversations).filter((c) => c.folderId === folderId).length;
                 const countSpan = folderItem.querySelector('.conversations-folder-count');
                 if (countSpan) countSpan.textContent = `(${count})`;
+
+                // 如果该文件夹已展开，同时刷新会话列表
+                if (folderItem.classList.contains('expanded')) {
+                    const conversationList = this.container?.querySelector(`.conversations-list[data-folder-id="${folderId}"]`);
+                    if (conversationList) {
+                        this.renderConversationList(folderId, conversationList);
+                    }
+                }
             }
         }
 
@@ -3550,18 +3560,26 @@
                 container.appendChild(folderItem);
 
                 // 会话列表容器（独立于文件夹项，紧随其后）
+                // 根据记忆的展开状态初始化
+                const isInitiallyExpanded = this.expandedFolderId === folder.id;
                 const conversationList = createElement('div', {
                     className: 'conversations-list',
                     'data-folder-id': folder.id,
-                    style: 'display: none;',
+                    style: isInitiallyExpanded ? 'display: block;' : 'display: none;',
                 });
                 container.appendChild(conversationList);
+
+                // 如果文件夹初始展开，立即渲染并添加 expanded class
+                if (isInitiallyExpanded) {
+                    folderItem.classList.add('expanded');
+                    this.renderConversationList(folder.id, conversationList);
+                }
 
                 // 绑定展开逻辑
                 folderItem.addEventListener('click', (e) => {
                     if (e.target.closest('button')) return; // 避免点击按钮触发
 
-                    // 折叠其他文件夹
+                    // 折叠其他文件夹，并更新记忆
                     container.querySelectorAll('.conversations-folder-item.expanded').forEach((el) => {
                         if (el !== folderItem) {
                             el.classList.remove('expanded');
@@ -3571,6 +3589,9 @@
                     });
 
                     const isExpanded = folderItem.classList.toggle('expanded');
+                    // 记忆展开状态
+                    this.expandedFolderId = isExpanded ? folder.id : null;
+
                     if (isExpanded) {
                         // 刷新计数（确保与实际会话数一致）
                         const count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id).length;
@@ -4031,9 +4052,27 @@
 
         /**
          * 设置激活状态
+         * 激活时刷新所有文件夹计数和展开的文件夹
          */
         setActive(active) {
+            const wasActive = this.isActive;
             this.isActive = active;
+
+            // 从非激活变为激活时，刷新所有文件夹计数和展开的文件夹
+            if (!wasActive && active) {
+                this.refreshAllFolderCounts();
+            }
+        }
+
+        /**
+         * 刷新所有文件夹的计数和展开的文件夹会话列表
+         */
+        refreshAllFolderCounts() {
+            if (!this.data || !this.data.folders) return;
+
+            this.data.folders.forEach((folder) => {
+                this.updateFolderCount(folder.id);
+            });
         }
 
         /**
@@ -5794,6 +5833,10 @@
                     showToast(this.t('refreshed'));
                 } else if (this.currentTab === 'prompts') {
                     this.refreshPromptList();
+                    showToast(this.t('refreshed'));
+                } else if (this.currentTab === 'conversations') {
+                    // 只刷新 UI 显示，不执行侧边栏同步
+                    this.conversationManager?.createUI();
                     showToast(this.t('refreshed'));
                 } else {
                     showToast(this.t('refreshed'));
