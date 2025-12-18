@@ -3107,39 +3107,45 @@
         startSidebarObserver() {
             if (this.sidebarObserverStop) return; // 已经在监听
 
-            this.sidebarObserverStop = DOMToolkit.each('.conversation', (el, isNew) => {
-                if (!isNew) return; // 只处理新增的会话
+            // 尝试获取侧边栏容器作为更精确的监听范围
+            const sidebarContainer = this.siteAdapter.getSidebarScrollContainer() || document;
 
-                // 尝试提取 ID，如果失败则重试（因为新会话可能属性延迟生成）
-                const tryAdd = (retries = 3) => {
-                    const jslog = el.getAttribute('jslog') || '';
-                    const idMatch = jslog.match(/\["c_([a-z0-9]+)"/);
-                    const id = idMatch ? idMatch[1] : '';
+            this.sidebarObserverStop = DOMToolkit.each(
+                '.conversation',
+                (el, isNew) => {
+                    if (!isNew) return; // 只处理新增的会话
 
-                    if (id) {
-                        if (!this.data.conversations[id]) {
-                            // 自动添加新会话到当前选中文件夹
-                            this.data.conversations[id] = {
-                                id,
-                                title: el.textContent?.trim() || 'New Conversation',
-                                url: `https://gemini.google.com/app/${id}`,
-                                folderId: this.data.lastUsedFolderId || 'inbox',
-                                createdAt: Date.now(),
-                                updatedAt: Date.now(),
-                            };
-                            this.saveData();
-                            // 轻量级更新计数（避免重建整个 UI 丢失展开状态）
-                            if (this.isActive) {
-                                this.updateFolderCount(this.data.lastUsedFolderId || 'inbox');
+                    // 尝试提取 ID，如果失败则重试（因为新会话可能属性延迟生成）
+                    const tryAdd = (retries = 5) => {
+                        const jslog = el.getAttribute('jslog') || '';
+                        const idMatch = jslog.match(/\["c_([a-z0-9]+)"/);
+                        const id = idMatch ? idMatch[1] : '';
+
+                        if (id) {
+                            if (!this.data.conversations[id]) {
+                                // 自动添加新会话到当前选中文件夹
+                                const folderId = this.data.lastUsedFolderId || 'inbox';
+                                this.data.conversations[id] = {
+                                    id,
+                                    title: el.textContent?.trim() || 'New Conversation',
+                                    url: `https://gemini.google.com/app/${id}`,
+                                    folderId: folderId,
+                                    createdAt: Date.now(),
+                                    updatedAt: Date.now(),
+                                };
+                                this.saveData();
+                                // 轻量级更新计数（避免重建整个 UI 丢失展开状态）
+                                this.updateFolderCount(folderId);
                             }
+                        } else if (retries > 0) {
+                            setTimeout(() => tryAdd(retries - 1), 500);
                         }
-                    } else if (retries > 0) {
-                        setTimeout(() => tryAdd(retries - 1), 1000);
-                    }
-                };
+                    };
 
-                tryAdd();
-            });
+                    tryAdd();
+                },
+                { parent: sidebarContainer },
+            );
         }
 
         /**
