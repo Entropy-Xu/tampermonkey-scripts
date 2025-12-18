@@ -47,6 +47,7 @@
         PROMPTS_SETTINGS: 'gemini_prompts_settings',
         READING_HISTORY: 'gemini_reading_history_settings',
         TAB_SETTINGS: 'gemini_tab_settings',
+        CONVERSATIONS: 'gemini_conversations', // 注意：实际存储时加 siteId 后缀
     };
 
     // 默认 Tab 顺序（settings 已移到 header 按钮，不参与排序）
@@ -67,6 +68,14 @@
         privacyMode: false, // 隐私模式
         privacyTitle: 'Google', // 隐私模式下的伪装标题
         titleFormat: '{status}{title}-{model}', // 自定义标题格式，支持 {status}、{title}、{model}
+    };
+
+    // 默认会话数据结构
+    const DEFAULT_CONVERSATION_DATA = {
+        folders: [{ id: 'inbox', name: '📥 收件箱', icon: '📥', isDefault: true }],
+        tags: [], // 预留标签系统
+        conversations: {}, // 会话数据，key 为 conversationId
+        lastUsedFolderId: 'inbox',
     };
 
     // Tab 定义（用于渲染和显示）
@@ -245,6 +254,19 @@
             conversationsSync: '同步会话',
             conversationsSyncing: '正在同步...',
             conversationsSynced: '同步完成',
+            conversationsAddFolder: '新建文件夹',
+            conversationsRename: '重命名',
+            conversationsDelete: '删除',
+            conversationsDeleteConfirm: '确定删除此文件夹吗？其中的会话将移到收件箱。',
+            conversationsFolderCreated: '文件夹已创建',
+            conversationsFolderRenamed: '文件夹已重命名',
+            conversationsFolderDeleted: '文件夹已删除',
+            conversationsCannotDeleteDefault: '无法删除默认文件夹',
+            conversationsIcon: '图标',
+            conversationsFolderName: '名称',
+            conversationsFolderNamePlaceholder: '输入文件夹名称',
+            cancel: '取消',
+            confirm: '确定',
         },
         'zh-TW': {
             panelTitle: 'Gemini 助手',
@@ -409,6 +431,19 @@
             conversationsSync: '同步會話',
             conversationsSyncing: '正在同步...',
             conversationsSynced: '同步完成',
+            conversationsAddFolder: '新建資料夾',
+            conversationsRename: '重命名',
+            conversationsDelete: '刪除',
+            conversationsDeleteConfirm: '確定刪除此資料夾嗎？其中的會話將移到收件箱。',
+            conversationsFolderCreated: '資料夾已創建',
+            conversationsFolderRenamed: '資料夾已重命名',
+            conversationsFolderDeleted: '資料夾已刪除',
+            conversationsCannotDeleteDefault: '無法刪除預設資料夾',
+            conversationsIcon: '圖標',
+            conversationsFolderName: '名稱',
+            conversationsFolderNamePlaceholder: '輸入資料夾名稱',
+            cancel: '取消',
+            confirm: '確定',
         },
         en: {
             panelTitle: 'Gemini Helper',
@@ -572,6 +607,19 @@
             conversationsSync: 'Sync',
             conversationsSyncing: 'Syncing...',
             conversationsSynced: 'Synced',
+            conversationsAddFolder: 'New Folder',
+            conversationsRename: 'Rename',
+            conversationsDelete: 'Delete',
+            conversationsDeleteConfirm: 'Delete this folder? Conversations will be moved to Inbox.',
+            conversationsFolderCreated: 'Folder created',
+            conversationsFolderRenamed: 'Folder renamed',
+            conversationsFolderDeleted: 'Folder deleted',
+            conversationsCannotDeleteDefault: 'Cannot delete default folder',
+            conversationsIcon: 'Icon',
+            conversationsFolderName: 'Name',
+            conversationsFolderNamePlaceholder: 'Enter folder name',
+            cancel: 'Cancel',
+            confirm: 'Confirm',
         },
     };
 
@@ -2927,12 +2975,100 @@
             this.siteAdapter = config.siteAdapter;
             this.t = config.i18n || ((k) => k);
             this.isActive = false;
+            this.data = null; // 会话数据
 
             this.init();
         }
 
         init() {
+            this.loadData();
             this.createUI();
+        }
+
+        /**
+         * 获取站点专属存储键
+         */
+        getStorageKey() {
+            const siteId = this.siteAdapter.getSiteId();
+            return `${SETTING_KEYS.CONVERSATIONS}_${siteId}`;
+        }
+
+        /**
+         * 加载会话数据
+         */
+        loadData() {
+            const key = this.getStorageKey();
+            const saved = GM_getValue(key, null);
+            if (saved) {
+                this.data = { ...DEFAULT_CONVERSATION_DATA, ...saved };
+            } else {
+                this.data = JSON.parse(JSON.stringify(DEFAULT_CONVERSATION_DATA));
+            }
+        }
+
+        /**
+         * 保存会话数据
+         */
+        saveData() {
+            const key = this.getStorageKey();
+            GM_setValue(key, this.data);
+        }
+
+        /**
+         * 创建文件夹
+         * @param {string} name 文件夹名称
+         * @param {string} icon 图标 emoji
+         * @returns {object} 新创建的文件夹
+         */
+        createFolder(name, icon = '📁') {
+            const folder = {
+                id: 'folder_' + Date.now(),
+                name: `${icon} ${name}`,
+                icon: icon,
+                isDefault: false,
+            };
+            this.data.folders.push(folder);
+            this.saveData();
+            return folder;
+        }
+
+        /**
+         * 重命名文件夹
+         * @param {string} folderId 文件夹 ID
+         * @param {string} newName 新名称
+         * @param {string} newIcon 新图标
+         */
+        renameFolder(folderId, newName, newIcon = null) {
+            const folder = this.data.folders.find((f) => f.id === folderId);
+            if (folder && !folder.isDefault) {
+                folder.name = newIcon ? `${newIcon} ${newName}` : newName;
+                if (newIcon) folder.icon = newIcon;
+                this.saveData();
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * 删除文件夹
+         * @param {string} folderId 文件夹 ID
+         * @returns {boolean} 是否删除成功
+         */
+        deleteFolder(folderId) {
+            const folder = this.data.folders.find((f) => f.id === folderId);
+            if (!folder || folder.isDefault) {
+                showToast(this.t('conversationsCannotDeleteDefault') || '无法删除默认文件夹');
+                return false;
+            }
+            // 将文件夹内的会话移到收件箱
+            Object.values(this.data.conversations).forEach((conv) => {
+                if (conv.folderId === folderId) {
+                    conv.folderId = 'inbox';
+                }
+            });
+            this.data.folders = this.data.folders.filter((f) => f.id !== folderId);
+            this.saveData();
+            return true;
         }
 
         /**
@@ -2946,6 +3082,20 @@
 
             // 工具栏
             const toolbar = createElement('div', { className: 'conversations-toolbar' });
+
+            // 新建文件夹按钮
+            const addFolderBtn = createElement(
+                'button',
+                {
+                    className: 'conversations-toolbar-btn',
+                    title: this.t('conversationsAddFolder') || '新建文件夹',
+                },
+                '➕ ' + (this.t('conversationsAddFolder') || '新建文件夹'),
+            );
+            addFolderBtn.addEventListener('click', () => this.showCreateFolderDialog());
+            toolbar.appendChild(addFolderBtn);
+
+            // 同步按钮
             const syncBtn = createElement(
                 'button',
                 {
@@ -2962,21 +3112,248 @@
             toolbar.appendChild(syncBtn);
             content.appendChild(toolbar);
 
-            // 占位内容
-            const placeholder = createElement('div', { className: 'conversations-placeholder' });
-            const placeholderInner = createElement('div', {
-                style: 'text-align: center; padding: 40px 20px; color: #888;',
-            });
-            const iconDiv = createElement('div', { style: 'font-size: 48px; margin-bottom: 16px;' }, '🚧');
-            const emptyDiv = createElement('div', { style: 'font-size: 14px; margin-bottom: 8px;' }, this.t('conversationsEmpty'));
-            const hintDiv = createElement('div', { style: 'font-size: 12px; color: #aaa;' }, this.t('conversationsEmptyHint'));
-            placeholderInner.appendChild(iconDiv);
-            placeholderInner.appendChild(emptyDiv);
-            placeholderInner.appendChild(hintDiv);
-            placeholder.appendChild(placeholderInner);
-            content.appendChild(placeholder);
+            // 文件夹列表
+            const folderList = this.createFolderListUI();
+            content.appendChild(folderList);
 
             container.appendChild(content);
+        }
+
+        /**
+         * 创建文件夹列表 UI
+         */
+        createFolderListUI() {
+            const container = createElement('div', { className: 'conversations-folder-list' });
+
+            if (!this.data || !this.data.folders || this.data.folders.length === 0) {
+                const empty = createElement('div', { className: 'conversations-empty' }, this.t('conversationsEmpty'));
+                container.appendChild(empty);
+                return container;
+            }
+
+            this.data.folders.forEach((folder) => {
+                const folderItem = this.createFolderItem(folder);
+                container.appendChild(folderItem);
+            });
+
+            return container;
+        }
+
+        /**
+         * 创建单个文件夹项
+         */
+        createFolderItem(folder) {
+            const item = createElement('div', {
+                className: 'conversations-folder-item' + (folder.isDefault ? ' default' : ''),
+                'data-folder-id': folder.id,
+            });
+
+            // 文件夹信息
+            const info = createElement('div', { className: 'conversations-folder-info' });
+            info.appendChild(createElement('span', { className: 'conversations-folder-icon' }, folder.icon));
+            info.appendChild(createElement('span', { className: 'conversations-folder-name' }, folder.name.replace(folder.icon, '').trim()));
+
+            // 会话计数
+            const count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id).length;
+            info.appendChild(createElement('span', { className: 'conversations-folder-count' }, `(${count})`));
+
+            item.appendChild(info);
+
+            // 操作菜单（非默认文件夹才显示）
+            if (!folder.isDefault) {
+                const menuBtn = createElement('button', { className: 'conversations-folder-menu-btn' }, '⋯');
+                menuBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showFolderMenu(folder, menuBtn);
+                });
+                item.appendChild(menuBtn);
+            }
+
+            // 点击展开/折叠（Phase 3 实现）
+            item.addEventListener('click', () => {
+                item.classList.toggle('expanded');
+                // Phase 3: 展开时显示会话列表
+            });
+
+            return item;
+        }
+
+        /**
+         * 显示文件夹操作菜单
+         */
+        showFolderMenu(folder, anchorEl) {
+            // 移除已有菜单
+            document.querySelectorAll('.conversations-folder-menu').forEach((m) => m.remove());
+
+            const menu = createElement('div', { className: 'conversations-folder-menu' });
+
+            const renameBtn = createElement('button', {}, this.t('conversationsRename') || '重命名');
+            renameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu.remove();
+                this.showRenameFolderDialog(folder);
+            });
+
+            const deleteBtn = createElement('button', { style: 'color: #ef4444;' }, this.t('conversationsDelete') || '删除');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu.remove();
+                this.confirmDeleteFolder(folder);
+            });
+
+            menu.appendChild(renameBtn);
+            menu.appendChild(deleteBtn);
+
+            // 定位菜单
+            const rect = anchorEl.getBoundingClientRect();
+            menu.style.position = 'fixed';
+            menu.style.top = `${rect.bottom + 4}px`;
+            menu.style.left = `${rect.left}px`;
+
+            document.body.appendChild(menu);
+
+            // 点击外部关闭
+            const closeMenu = (e) => {
+                if (!menu.contains(e.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        }
+
+        /**
+         * 显示新建文件夹对话框
+         */
+        showCreateFolderDialog() {
+            this.showFolderDialog({
+                title: this.t('conversationsAddFolder') || '新建文件夹',
+                icon: '📁',
+                name: '',
+                onConfirm: (name, icon) => {
+                    if (name.trim()) {
+                        this.createFolder(name.trim(), icon);
+                        this.createUI(); // 刷新 UI
+                        showToast(this.t('conversationsFolderCreated') || '文件夹已创建');
+                    }
+                },
+            });
+        }
+
+        /**
+         * 显示重命名文件夹对话框
+         */
+        showRenameFolderDialog(folder) {
+            const currentName = folder.name.replace(folder.icon, '').trim();
+            this.showFolderDialog({
+                title: this.t('conversationsRename') || '重命名文件夹',
+                icon: folder.icon,
+                name: currentName,
+                onConfirm: (name, icon) => {
+                    if (name.trim()) {
+                        this.renameFolder(folder.id, name.trim(), icon);
+                        this.createUI(); // 刷新 UI
+                        showToast(this.t('conversationsFolderRenamed') || '文件夹已重命名');
+                    }
+                },
+            });
+        }
+
+        /**
+         * 确认删除文件夹
+         */
+        confirmDeleteFolder(folder) {
+            if (confirm(this.t('conversationsDeleteConfirm') || `确定删除文件夹 "${folder.name}" 吗？其中的会话将移到收件箱。`)) {
+                if (this.deleteFolder(folder.id)) {
+                    this.createUI(); // 刷新 UI
+                    showToast(this.t('conversationsFolderDeleted') || '文件夹已删除');
+                }
+            }
+        }
+
+        /**
+         * 通用文件夹对话框（新建/重命名复用）
+         */
+        showFolderDialog({ title, icon, name, onConfirm }) {
+            const overlay = createElement('div', { className: 'conversations-dialog-overlay' });
+            const dialog = createElement('div', { className: 'conversations-dialog' });
+
+            // 标题
+            dialog.appendChild(createElement('div', { className: 'conversations-dialog-title' }, title));
+
+            // Emoji 选择器
+            const emojiSection = createElement('div', { className: 'conversations-dialog-section' });
+            emojiSection.appendChild(createElement('label', {}, this.t('conversationsIcon') || '图标'));
+            const emojiPicker = this.createEmojiPicker(icon);
+            emojiSection.appendChild(emojiPicker);
+            dialog.appendChild(emojiSection);
+
+            // 名称输入
+            const nameSection = createElement('div', { className: 'conversations-dialog-section' });
+            nameSection.appendChild(createElement('label', {}, this.t('conversationsFolderName') || '名称'));
+            const nameInput = createElement('input', {
+                type: 'text',
+                className: 'conversations-dialog-input',
+                value: name,
+                placeholder: this.t('conversationsFolderNamePlaceholder') || '输入文件夹名称',
+            });
+            nameSection.appendChild(nameInput);
+            dialog.appendChild(nameSection);
+
+            // 按钮
+            const buttons = createElement('div', { className: 'conversations-dialog-buttons' });
+            const cancelBtn = createElement('button', { className: 'conversations-dialog-btn cancel' }, this.t('cancel') || '取消');
+            const confirmBtn = createElement('button', { className: 'conversations-dialog-btn confirm' }, this.t('confirm') || '确定');
+
+            cancelBtn.addEventListener('click', () => overlay.remove());
+            confirmBtn.addEventListener('click', () => {
+                const selectedIcon = emojiPicker.querySelector('.selected')?.textContent || icon;
+                onConfirm(nameInput.value, selectedIcon);
+                overlay.remove();
+            });
+
+            buttons.appendChild(cancelBtn);
+            buttons.appendChild(confirmBtn);
+            dialog.appendChild(buttons);
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            // 聚焦输入框
+            nameInput.focus();
+
+            // ESC 关闭
+            overlay.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') overlay.remove();
+            });
+        }
+
+        /**
+         * 创建 Emoji 选择器
+         */
+        createEmojiPicker(selectedEmoji = '📁') {
+            const container = createElement('div', { className: 'conversations-emoji-picker' });
+
+            // 预设 emoji 列表
+            const presetEmojis = ['📁', '📂', '📥', '⭐', '💼', '🎯', '🔖', '💡', '🎨', '🛠️', '📚', '🎮', '🎵', '✈️', '🏠', '❤️'];
+
+            presetEmojis.forEach((emoji) => {
+                const btn = createElement(
+                    'button',
+                    {
+                        className: 'conversations-emoji-btn' + (emoji === selectedEmoji ? ' selected' : ''),
+                    },
+                    emoji,
+                );
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    container.querySelectorAll('.conversations-emoji-btn').forEach((b) => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                });
+                container.appendChild(btn);
+            });
+
+            return container;
         }
 
         /**
@@ -2990,7 +3367,8 @@
          * 刷新会话列表
          */
         refresh() {
-            // Phase 3 实现
+            this.loadData();
+            this.createUI();
         }
     }
 
@@ -4284,6 +4662,110 @@
                 .scroll-nav-btn.icon-only:hover span {
                     transform: rotate(360deg) scale(1.2);
                 }
+
+                /* ========== 会话面板样式 ========== */
+                .conversations-content {
+                    display: flex; flex-direction: column; flex: 1; min-height: 200px; overflow: hidden;
+                }
+                .conversations-toolbar {
+                    display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+                }
+                .conversations-toolbar-btn {
+                    padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f9fafb;
+                    font-size: 13px; color: #374151; cursor: pointer; transition: all 0.2s;
+                    display: flex; align-items: center; gap: 4px;
+                }
+                .conversations-toolbar-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
+                .conversations-folder-list {
+                    flex: 1; overflow-y: auto; padding: 8px;
+                }
+                .conversations-folder-item {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 10px 12px; margin-bottom: 4px; border-radius: 8px;
+                    background: #f9fafb; cursor: pointer; transition: all 0.2s;
+                }
+                .conversations-folder-item:hover { background: #f3f4f6; }
+                .conversations-folder-item.default { background: #e0f2fe; }
+                .conversations-folder-item.expanded { background: #e0e7ff; }
+                .conversations-folder-info {
+                    display: flex; align-items: center; gap: 8px; flex: 1;
+                }
+                .conversations-folder-icon { font-size: 18px; }
+                .conversations-folder-name { font-size: 14px; font-weight: 500; color: #1f2937; }
+                .conversations-folder-count { font-size: 12px; color: #6b7280; }
+                .conversations-folder-menu-btn {
+                    width: 24px; height: 24px; border: none; background: transparent;
+                    color: #6b7280; cursor: pointer; border-radius: 4px; font-size: 14px;
+                }
+                .conversations-folder-menu-btn:hover { background: #e5e7eb; }
+                .conversations-folder-menu {
+                    background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000002; padding: 4px;
+                    min-width: 100px;
+                }
+                .conversations-folder-menu button {
+                    display: block; width: 100%; padding: 8px 12px; border: none; background: none;
+                    text-align: left; font-size: 13px; color: #374151; cursor: pointer; border-radius: 4px;
+                }
+                .conversations-folder-menu button:hover { background: #f3f4f6; }
+                .conversations-empty {
+                    text-align: center; padding: 40px 20px; color: #9ca3af; font-size: 14px;
+                }
+
+                /* 会话对话框样式 */
+                .conversations-dialog-overlay {
+                    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                    background: rgba(0,0,0,0.5); z-index: 1000003;
+                    display: flex; align-items: center; justify-content: center;
+                }
+                .conversations-dialog {
+                    background: white; border-radius: 12px; padding: 20px; min-width: 320px;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                }
+                .conversations-dialog-title {
+                    font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 16px;
+                }
+                .conversations-dialog-section {
+                    margin-bottom: 16px;
+                }
+                .conversations-dialog-section label {
+                    display: block; font-size: 13px; color: #6b7280; margin-bottom: 8px;
+                }
+                .conversations-dialog-input {
+                    width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;
+                    font-size: 14px; box-sizing: border-box;
+                }
+                .conversations-dialog-input:focus {
+                    outline: none; border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.1);
+                }
+                .conversations-dialog-buttons {
+                    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+                }
+                .conversations-dialog-btn {
+                    padding: 8px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: all 0.2s;
+                }
+                .conversations-dialog-btn.cancel {
+                    border: 1px solid #d1d5db; background: white; color: #374151;
+                }
+                .conversations-dialog-btn.cancel:hover { background: #f3f4f6; }
+                .conversations-dialog-btn.confirm {
+                    border: none; background: ${gradient}; color: white;
+                }
+                .conversations-dialog-btn.confirm:hover { opacity: 0.9; }
+
+                /* Emoji 选择器 */
+                .conversations-emoji-picker {
+                    display: flex; flex-wrap: wrap; gap: 4px;
+                }
+                .conversations-emoji-btn {
+                    width: 36px; height: 36px; border: 1px solid #e5e7eb; border-radius: 8px;
+                    background: #f9fafb; font-size: 18px; cursor: pointer; transition: all 0.2s;
+                }
+                .conversations-emoji-btn:hover { background: #f3f4f6; border-color: #d1d5db; }
+                .conversations-emoji-btn.selected {
+                    background: #e0e7ff; border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.2);
+                }
+
                 /* 分类管理按钮 */
                 .category-manage-btn {
                     padding: 4px 8px; background: transparent; border: 1px dashed #9ca3af; border-radius: 12px;
