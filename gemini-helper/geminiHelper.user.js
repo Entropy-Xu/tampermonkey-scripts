@@ -1347,6 +1347,7 @@
                     const idMatch = jslog.match(/\["c_([a-z0-9]+)"/);
                     const id = idMatch ? idMatch[1] : '';
                     const title = el.textContent?.trim() || '';
+
                     return {
                         id: id,
                         title: title,
@@ -3099,26 +3100,35 @@
             this.sidebarObserverStop = DOMToolkit.each('.conversation', (el, isNew) => {
                 if (!isNew) return; // 只处理新增的会话
 
-                // 从 jslog 提取 ID
-                const jslog = el.getAttribute('jslog') || '';
-                const idMatch = jslog.match(/\["c_([a-z0-9]+)"/);
-                const id = idMatch ? idMatch[1] : '';
-                if (!id || this.data.conversations[id]) return; // 无ID或已存在
+                // 尝试提取 ID，如果失败则重试（因为新会话可能属性延迟生成）
+                const tryAdd = (retries = 3) => {
+                    const jslog = el.getAttribute('jslog') || '';
+                    const idMatch = jslog.match(/\["c_([a-z0-9]+)"/);
+                    const id = idMatch ? idMatch[1] : '';
 
-                // 自动添加新会话到当前选中文件夹
-                this.data.conversations[id] = {
-                    id,
-                    title: el.textContent?.trim() || '',
-                    url: `https://gemini.google.com/app/${id}`,
-                    folderId: this.data.lastUsedFolderId || 'inbox',
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
+                    if (id) {
+                        if (!this.data.conversations[id]) {
+                            // 自动添加新会话到当前选中文件夹
+                            this.data.conversations[id] = {
+                                id,
+                                title: el.textContent?.trim() || 'New Conversation',
+                                url: `https://gemini.google.com/app/${id}`,
+                                folderId: this.data.lastUsedFolderId || 'inbox',
+                                createdAt: Date.now(),
+                                updatedAt: Date.now(),
+                            };
+                            this.saveData();
+                            // 刷新 UI（如果当前 Tab 是会话）
+                            if (this.isActive) {
+                                this.createUI();
+                            }
+                        }
+                    } else if (retries > 0) {
+                        setTimeout(() => tryAdd(retries - 1), 1000);
+                    }
                 };
-                this.saveData();
-                // 刷新 UI（如果当前 Tab 是会话）
-                if (this.isActive) {
-                    this.createUI();
-                }
+
+                tryAdd();
             });
         }
 
@@ -3137,6 +3147,7 @@
          */
         activate() {
             this.isActive = true;
+            this.syncConversations(null, true); // 切换进来时静默同步一次
             this.createUI();
         }
 
@@ -3263,11 +3274,13 @@
         /**
          * 从侧边栏同步会话（增量）
          * @param {string} targetFolderId 可选，指定目标文件夹
+         * @param {boolean} silent 是否静默同步（不显示 Toast）
          */
-        syncConversations(targetFolderId = null) {
+        syncConversations(targetFolderId = null, silent = false) {
             const sidebarItems = this.siteAdapter.getConversationList();
+
             if (!sidebarItems || sidebarItems.length === 0) {
-                showToast(this.t('conversationsSyncEmpty') || '未找到会话');
+                if (!silent) showToast(this.t('conversationsSyncEmpty') || '未找到会话');
                 return;
             }
 
@@ -3277,9 +3290,11 @@
 
             // 初次同步且未指定目标文件夹：弹窗让用户选择
             if (isFirstSync && !targetFolderId) {
-                this.showFolderSelectDialog((selectedFolderId) => {
-                    this.syncConversations(selectedFolderId);
-                });
+                if (!silent) {
+                    this.showFolderSelectDialog((selectedFolderId) => {
+                        this.syncConversations(selectedFolderId, false);
+                    });
+                }
                 return;
             }
 
@@ -3307,6 +3322,7 @@
                         createdAt: now,
                         updatedAt: now,
                     };
+                    // 如果在后台自动同步，可能需要通知？暂不需要
                     newCount++;
                 }
             });
@@ -3316,13 +3332,21 @@
                 this.data.lastUsedFolderId = targetFolderId;
             }
 
-            this.saveData();
-            this.createUI(); // 刷新 UI
-
+            // 有变更才保存和刷新
             if (newCount > 0 || updatedCount > 0) {
-                showToast(`${this.t('conversationsSynced') || '同步完成'}：+${newCount} ↻${updatedCount}`);
-            } else {
-                showToast(this.t('conversationsSyncNoChange') || '无新会话');
+                this.saveData();
+                this.createUI();
+            }
+
+            if (!silent) {
+                if (newCount > 0 || updatedCount > 0) {
+                    showToast(`${this.t('conversationsSynced') || '同步完成'}：+${newCount} ↻${updatedCount}`);
+                } else {
+                    showToast(this.t('conversationsSyncNoChange') || '无新会话');
+                }
+            } else if (newCount > 0) {
+                // 静默模式下，如果有新会话，也轻微提示一下？或者更新 Tab 标题？不用了，只要 UI 刷新就行。
+                // console.log(`[GeminiHelper] Auto-synced ${newCount} new conversations.`);
             }
         }
 
