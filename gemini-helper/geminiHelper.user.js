@@ -49,8 +49,8 @@
         TAB_SETTINGS: 'gemini_tab_settings',
     };
 
-    // 默认 Tab 顺序
-    const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'conversations', 'settings'];
+    // 默认 Tab 顺序（settings 已移到 header 按钮，不参与排序）
+    const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'conversations'];
     const DEFAULT_PROMPTS_SETTINGS = { enabled: true };
     const DEFAULT_READING_HISTORY_SETTINGS = {
         persistence: true,
@@ -4486,7 +4486,6 @@
             const title = createElement('div', { className: 'prompt-panel-title' });
             title.appendChild(createElement('span', {}, '✨'));
             title.appendChild(createElement('span', {}, this.t('panelTitle')));
-            title.appendChild(createElement('span', { className: 'site-indicator' }, this.siteAdapter.getName()));
 
             const controls = createElement('div', { className: 'prompt-panel-controls' });
             const refreshBtn = createElement(
@@ -4544,6 +4543,28 @@
                 controls.appendChild(newTabBtn);
             }
 
+            // 设置按钮（固定在header，不占用Tab位置）
+            const settingsBtn = createElement(
+                'button',
+                {
+                    className: 'prompt-panel-btn',
+                    id: 'settings-btn',
+                    title: this.t('tabSettings'),
+                },
+                '⚙️',
+            );
+            settingsBtn.addEventListener('click', () => {
+                if (this.currentTab === 'settings') {
+                    // 已在设置页，返回上一个 Tab（默认提示词）
+                    this.switchTab(this.previousTab || 'prompts');
+                } else {
+                    // 记住当前 Tab，进入设置
+                    this.previousTab = this.currentTab;
+                    this.switchTab('settings');
+                }
+            });
+
+            controls.appendChild(settingsBtn);
             controls.appendChild(refreshBtn);
             controls.appendChild(toggleBtn);
 
@@ -4607,15 +4628,18 @@
                     className += ' hidden';
                 }
 
+                // 设置 Tab 不在这里渲染（已移动到 header 按钮）
+                if (tabId === 'settings') return;
+
                 const btn = createElement('button', {
                     className: className,
                     'data-tab': tabId,
                     id: `${tabId}-tab`,
-                    title: this.t(def.labelKey), // hover 时显示完整名称
                 });
 
-                // 仅显示图标（不显示文字）
-                btn.appendChild(createElement('span', { style: 'font-size: 18px;' }, def.icon));
+                // 图标 + 文字
+                btn.appendChild(createElement('span', { style: 'margin-right: 4px;' }, def.icon));
+                btn.appendChild(document.createTextNode(this.t(def.labelKey)));
                 // btn.appendChild(document.createTextNode(this.t(def.labelKey)));
 
                 btn.addEventListener('click', () => this.switchTab(tabId));
@@ -4803,6 +4827,12 @@
             document.querySelectorAll('.prompt-panel-tab').forEach((tab) => {
                 tab.classList.toggle('active', tab.dataset.tab === tabName);
             });
+
+            // 更新设置按钮激活状态
+            const settingsBtn = document.getElementById('settings-btn');
+            if (settingsBtn) {
+                settingsBtn.classList.toggle('active', tabName === 'settings');
+            }
 
             // 切换内容区
             document.getElementById('prompts-content')?.classList.toggle('hidden', tabName !== 'prompts');
@@ -5140,7 +5170,8 @@
             layoutContainer.appendChild(tabDesc);
 
             const currentOrder = this.settings.tabOrder || DEFAULT_TAB_ORDER;
-            const validOrder = currentOrder.filter((id) => TAB_DEFINITIONS[id]);
+            // 过滤掉 settings（已移到 header 按钮，不参与排序）
+            const validOrder = currentOrder.filter((id) => TAB_DEFINITIONS[id] && id !== 'settings');
 
             validOrder.forEach((tabId, index) => {
                 const def = TAB_DEFINITIONS[tabId];
@@ -5232,14 +5263,6 @@
                     controls.appendChild(conversationsToggle);
                 }
 
-                // 大纲高级设置（如果是在大纲 Tab 行）
-                if (tabId === 'outline') {
-                    // 插入大纲高级设置的可折叠区域到下面（或者作为子项）
-                    // 为保持 UI 简洁，我们可以在点击大纲 toggle 时不做额外展示，而是有一个专门的“大纲高级设置”区域
-                    // 由于这里是排序拖拽区，不适合放太多配置。
-                    // 决定：在排序列表下方新增一个独立的大纲设置区域
-                }
-
                 const upBtn = createElement('button', {
                     className: 'prompt-panel-btn',
                     style: 'background: #f3f4f6; color: #4b5563; width: 32px; height: 32px; font-size: 16px; margin-right: 4px; border: 1px solid #e5e7eb;',
@@ -5309,7 +5332,7 @@
 
             const layoutSection = this.createCollapsibleSection(this.t('tabOrderSettings'), layoutContainer);
 
-            // 4.5 阅读历史设置 (新增独立版块)
+            // 4.5 阅读历史设置
             const anchorContainer = createElement('div', {});
 
             // 持久化开关
@@ -5410,7 +5433,7 @@
             anchorContainer.appendChild(anchorAutoRestoreItem);
             anchorContainer.appendChild(anchorCleanupItem);
 
-            // 折叠面板显示锚点（从其他设置移入）
+            // 折叠面板显示锚点
             const showAnchorItem = createElement('div', { className: 'setting-item' });
             const showAnchorInfo = createElement('div', { className: 'setting-item-info' });
             showAnchorInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('showCollapsedAnchorLabel')));
@@ -5440,7 +5463,7 @@
 
             const anchorSection = this.createCollapsibleSection(this.t('readingNavigationSettings'), anchorContainer);
 
-            // 5. 大纲详细设置 (高级配置)
+            // 5. 大纲详细设置
             const outlineSettingsContainer = createElement('div', {});
 
             // 自动更新开关
@@ -5492,7 +5515,7 @@
 
             const outlineSettingsSection = this.createCollapsibleSection(this.t('outlineSettings'), outlineSettingsContainer, { defaultExpanded: false });
 
-            // 6. 标签页设置 (折叠面板)
+            // 6. 标签页设置
             const tabSettingsContainer = createElement('div', {});
 
             // 6.1 新标签页打开开关
