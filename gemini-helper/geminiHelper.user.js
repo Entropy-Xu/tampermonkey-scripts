@@ -50,7 +50,7 @@
     };
 
     // 默认 Tab 顺序
-    const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'settings'];
+    const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'conversations', 'settings'];
     const DEFAULT_PROMPTS_SETTINGS = { enabled: true };
     const DEFAULT_READING_HISTORY_SETTINGS = {
         persistence: true,
@@ -71,8 +71,9 @@
 
     // Tab 定义（用于渲染和显示）
     const TAB_DEFINITIONS = {
-        prompts: { id: 'prompts', labelKey: 'tabPrompts', icon: '📝' },
-        outline: { id: 'outline', labelKey: 'tabOutline', icon: '📑' },
+        prompts: { id: 'prompts', labelKey: 'tabPrompts', icon: '✏️' },
+        outline: { id: 'outline', labelKey: 'tabOutline', icon: '📋' },
+        conversations: { id: 'conversations', labelKey: 'tabConversations', icon: '💬' },
         settings: { id: 'settings', labelKey: 'tabSettings', icon: '⚙️' },
     };
 
@@ -236,6 +237,14 @@
             // 界面排版开关
             disableOutline: '禁用大纲',
             togglePrompts: '启用/禁用提示词',
+            toggleConversations: '启用/禁用会话',
+            // 会话功能
+            tabConversations: '会话',
+            conversationsEmpty: '暂无会话数据',
+            conversationsEmptyHint: '点击上方同步按钮从侧边栏导入会话',
+            conversationsSync: '同步会话',
+            conversationsSyncing: '正在同步...',
+            conversationsSynced: '同步完成',
         },
         'zh-TW': {
             panelTitle: 'Gemini 助手',
@@ -392,6 +401,14 @@
             // 介面排版開關
             disableOutline: '禁用大綱',
             togglePrompts: '啟用/禁用提示詞',
+            toggleConversations: '啟用/禁用會話',
+            // 會話功能
+            tabConversations: '會話',
+            conversationsEmpty: '暫無會話數據',
+            conversationsEmptyHint: '點擊上方同步按鈕從側邊欄導入會話',
+            conversationsSync: '同步會話',
+            conversationsSyncing: '正在同步...',
+            conversationsSynced: '同步完成',
         },
         en: {
             panelTitle: 'Gemini Helper',
@@ -547,6 +564,14 @@
             // Interface Toggle
             disableOutline: 'Disable Outline',
             togglePrompts: 'Toggle Prompts',
+            toggleConversations: 'Toggle Conversations',
+            // Conversations
+            tabConversations: 'Conversations',
+            conversationsEmpty: 'No conversations yet',
+            conversationsEmptyHint: 'Click sync button above to import from sidebar',
+            conversationsSync: 'Sync',
+            conversationsSyncing: 'Syncing...',
+            conversationsSynced: 'Synced',
         },
     };
 
@@ -2875,6 +2900,97 @@
     }
 
     /**
+     * 通用会话管理器
+     * 负责会话列表的 UI 渲染、文件夹管理和交互
+     * Phase 1: 骨架版本，仅显示占位内容
+     */
+    class ConversationManager {
+        constructor(config) {
+            this.container = config.container;
+            this.settings = config.settings;
+            this.siteAdapter = config.siteAdapter;
+            this.t = config.i18n || ((k) => k);
+            this.isActive = false;
+
+            this.init();
+        }
+
+        init() {
+            this.createUI();
+        }
+
+        /**
+         * 创建会话面板 UI
+         */
+        createUI() {
+            const container = this.container;
+            clearElement(container);
+
+            const content = createElement('div', { className: 'conversations-content' });
+
+            // 工具栏
+            const toolbar = createElement('div', { className: 'conversations-toolbar' });
+            const syncBtn = createElement(
+                'button',
+                {
+                    className: 'conversations-toolbar-btn',
+                    id: 'conversations-sync-btn',
+                    title: this.t('conversationsSync'),
+                },
+                '🔄 ' + this.t('conversationsSync'),
+            );
+            syncBtn.addEventListener('click', () => {
+                this.showToast(this.t('conversationsSyncing'));
+                // Phase 3 实现同步逻辑
+            });
+            toolbar.appendChild(syncBtn);
+            content.appendChild(toolbar);
+
+            // 占位内容
+            const placeholder = createElement('div', { className: 'conversations-placeholder' });
+            const placeholderInner = createElement('div', {
+                style: 'text-align: center; padding: 40px 20px; color: #888;',
+            });
+            const iconDiv = createElement('div', { style: 'font-size: 48px; margin-bottom: 16px;' }, '🚧');
+            const emptyDiv = createElement('div', { style: 'font-size: 14px; margin-bottom: 8px;' }, this.t('conversationsEmpty'));
+            const hintDiv = createElement('div', { style: 'font-size: 12px; color: #aaa;' }, this.t('conversationsEmptyHint'));
+            placeholderInner.appendChild(iconDiv);
+            placeholderInner.appendChild(emptyDiv);
+            placeholderInner.appendChild(hintDiv);
+            placeholder.appendChild(placeholderInner);
+            content.appendChild(placeholder);
+
+            container.appendChild(content);
+        }
+
+        /**
+         * 显示提示消息
+         */
+        showToast(message) {
+            const existing = document.querySelector('.gemini-helper-toast');
+            if (existing) existing.remove();
+
+            const toast = createElement('div', { className: 'gemini-helper-toast' }, message);
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        /**
+         * 设置激活状态
+         */
+        setActive(active) {
+            this.isActive = active;
+        }
+
+        /**
+         * 刷新会话列表
+         */
+        refresh() {
+            // Phase 3 实现
+        }
+    }
+
+    /**
      * 通用大纲管理器
      * 负责大纲的 UI 渲染、交互和状态管理
      * 数据源由外部适配器提供
@@ -3697,7 +3813,23 @@
             const widthSettings = GM_getValue(SETTING_KEYS.PAGE_WIDTH, DEFAULT_WIDTH_SETTINGS);
             const outlineSettings = GM_getValue(SETTING_KEYS.OUTLINE, DEFAULT_OUTLINE_SETTINGS);
             const promptsSettings = GM_getValue(SETTING_KEYS.PROMPTS_SETTINGS, DEFAULT_PROMPTS_SETTINGS);
-            const tabOrder = GM_getValue(SETTING_KEYS.TAB_ORDER, DEFAULT_TAB_ORDER);
+            let tabOrder = GM_getValue(SETTING_KEYS.TAB_ORDER, DEFAULT_TAB_ORDER);
+
+            // 兼容老用户：确保所有默认 Tab 都在 tabOrder 中
+            // 如果有新增的 Tab（如 conversations），自动添加到 settings 之前
+            const missingTabs = DEFAULT_TAB_ORDER.filter((tab) => !tabOrder.includes(tab));
+            if (missingTabs.length > 0) {
+                const settingsIndex = tabOrder.indexOf('settings');
+                if (settingsIndex !== -1) {
+                    // 在 settings 之前插入缺失的 Tab
+                    tabOrder = [...tabOrder.slice(0, settingsIndex), ...missingTabs, ...tabOrder.slice(settingsIndex)];
+                } else {
+                    // 如果没有 settings，直接追加
+                    tabOrder = [...tabOrder, ...missingTabs];
+                }
+                // 保存更新后的 tabOrder
+                GM_setValue(SETTING_KEYS.TAB_ORDER, tabOrder);
+            }
 
             // 加载模型锁定设置（按站点隔离，但一次性加载所有站点的配置）
             const savedModelLockSettings = GM_getValue(SETTING_KEYS.MODEL_LOCK, {});
@@ -3732,6 +3864,7 @@
                 showCollapsedAnchor: GM_getValue('gemini_show_collapsed_anchor', true),
                 tabSettings: { ...DEFAULT_TAB_SETTINGS, ...GM_getValue(SETTING_KEYS.TAB_SETTINGS, {}) },
                 readingHistory: { ...DEFAULT_READING_HISTORY_SETTINGS, ...GM_getValue(SETTING_KEYS.READING_HISTORY, {}) },
+                conversations: GM_getValue('gemini_conversations_settings', { enabled: true }),
             };
         }
 
@@ -3765,6 +3898,10 @@
             GM_setValue('gemini_prevent_auto_scroll', settings.preventAutoScroll);
             // 保存阅读历史设置
             GM_setValue(SETTING_KEYS.READING_HISTORY, settings.readingHistory);
+            // 保存会话设置
+            if (settings.conversations) {
+                GM_setValue('gemini_conversations_settings', settings.conversations);
+            }
         }
     }
 
@@ -4465,16 +4602,21 @@
                 if (tabId === 'prompts' && !this.settings.prompts?.enabled) {
                     className += ' hidden';
                 }
+                // 会话特殊显隐逻辑
+                if (tabId === 'conversations' && this.settings.conversations?.enabled === false) {
+                    className += ' hidden';
+                }
 
                 const btn = createElement('button', {
                     className: className,
                     'data-tab': tabId,
                     id: `${tabId}-tab`,
+                    title: this.t(def.labelKey), // hover 时显示完整名称
                 });
 
-                // 添加图标和文本
-                btn.appendChild(createElement('span', { style: 'margin-right: 6px;' }, def.icon));
-                btn.appendChild(document.createTextNode(this.t(def.labelKey)));
+                // 仅显示图标（不显示文字）
+                btn.appendChild(createElement('span', { style: 'font-size: 18px;' }, def.icon));
+                // btn.appendChild(document.createTextNode(this.t(def.labelKey)));
 
                 btn.addEventListener('click', () => this.switchTab(tabId));
                 tabs.appendChild(btn);
@@ -4525,7 +4667,20 @@
                 i18n: (k) => this.t(k),
             });
 
-            // 3. 设置面板内容区
+            // 3. 会话面板内容区
+            const conversationsContent = createElement('div', {
+                className: `prompt-panel-content${this.currentTab === 'conversations' ? '' : ' hidden'}`,
+                id: 'conversations-content',
+            });
+            // 初始化会话管理器
+            this.conversationManager = new ConversationManager({
+                container: conversationsContent,
+                settings: this.settings,
+                siteAdapter: this.siteAdapter,
+                i18n: (k) => this.t(k),
+            });
+
+            // 4. 设置面板内容区
             const settingsContent = createElement('div', {
                 className: `prompt-panel-content${this.currentTab === 'settings' ? '' : ' hidden'}`,
                 id: 'settings-content',
@@ -4534,6 +4689,7 @@
 
             panel.appendChild(promptsContent);
             panel.appendChild(outlineContent);
+            panel.appendChild(conversationsContent);
             panel.appendChild(settingsContent);
 
             document.body.appendChild(panel);
@@ -4614,7 +4770,6 @@
                 style: 'opacity: 0.4; cursor: default;',
             });
             anchorBtn.appendChild(createElement('span', {}, '⚓'));
-            // anchorBtn.appendChild(createElement('span', {}, this.t('anchorPoint')));
 
             const scrollBottomBtn = createElement('button', {
                 className: 'scroll-nav-btn',
@@ -4652,11 +4807,17 @@
             // 切换内容区
             document.getElementById('prompts-content')?.classList.toggle('hidden', tabName !== 'prompts');
             document.getElementById('outline-content')?.classList.toggle('hidden', tabName !== 'outline');
+            document.getElementById('conversations-content')?.classList.toggle('hidden', tabName !== 'conversations');
             document.getElementById('settings-content')?.classList.toggle('hidden', tabName !== 'settings');
 
             // 通知 OutlineManager 激活状态（用于控制自动更新显隐）
             if (this.outlineManager) {
                 this.outlineManager.setActive(tabName === 'outline');
+            }
+
+            // 通知 ConversationManager 激活状态
+            if (this.conversationManager) {
+                this.conversationManager.setActive(tabName === 'conversations');
             }
 
             // 更新刷新按钮的提示
@@ -4665,6 +4826,7 @@
                 const titleMap = {
                     prompts: this.t('refreshPrompts'),
                     outline: this.t('refreshOutline'),
+                    conversations: this.t('conversationsSync'),
                     settings: this.t('refreshSettings'),
                 };
                 refreshBtn.title = titleMap[tabName] || this.t('refresh');
@@ -5040,6 +5202,34 @@
                         this.showToast(this.settings.prompts.enabled ? this.t('settingOn') : this.t('settingOff'));
                     });
                     controls.appendChild(promptsToggle);
+                }
+
+                // 特殊处理：如果是会话 Tab，在排序按钮旁边添加开关
+                if (tabId === 'conversations') {
+                    // 确保 conversations 设置对象存在
+                    if (!this.settings.conversations) {
+                        this.settings.conversations = { enabled: true };
+                    }
+                    const conversationsToggle = createElement('div', {
+                        className: 'setting-toggle' + (this.settings.conversations?.enabled !== false ? ' active' : ''),
+                        id: 'toggle-conversations-inline',
+                        style: 'transform: scale(0.8); margin-right: 12px;',
+                        title: this.t('toggleConversations'),
+                    });
+                    conversationsToggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.settings.conversations.enabled = !this.settings.conversations.enabled;
+                        conversationsToggle.classList.toggle('active', this.settings.conversations.enabled);
+                        this.saveSettings();
+
+                        const conversationsTab = document.getElementById('conversations-tab');
+                        if (conversationsTab) conversationsTab.classList.toggle('hidden', !this.settings.conversations.enabled);
+
+                        if (!this.settings.conversations.enabled && this.currentTab === 'conversations') this.switchTab('settings');
+
+                        this.showToast(this.settings.conversations.enabled ? this.t('settingOn') : this.t('settingOff'));
+                    });
+                    controls.appendChild(conversationsToggle);
                 }
 
                 // 大纲高级设置（如果是在大纲 Tab 行）
