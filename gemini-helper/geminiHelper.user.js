@@ -53,6 +53,11 @@
     // 默认 Tab 顺序（settings 已移到 header 按钮，不参与排序）
     const DEFAULT_TAB_ORDER = ['prompts', 'outline', 'conversations'];
     const DEFAULT_PROMPTS_SETTINGS = { enabled: true };
+    const DEFAULT_CONVERSATIONS_SETTINGS = {
+        enabled: true,
+        syncDeleteToCloud: false, // 删除会话时是否同步删除云端，默认否
+        syncRenameToCloud: true, // 修改标题时是否同步云端，默认是
+    };
     const DEFAULT_READING_HISTORY_SETTINGS = {
         persistence: true,
         autoRestore: false,
@@ -279,6 +284,12 @@
             conversationsSyncDeleteTitle: '同步删除',
             conversationsSyncDeleteMsg: '检测到 {count} 个会话已在云端删除，是否同步删除本地记录？',
             conversationsDeleted: '已移除',
+            // 会话设置
+            conversationsSettingsTitle: '会话设置',
+            conversationsSyncDeleteLabel: '删除时同步删除云端',
+            conversationsSyncDeleteDesc: '删除本地会话记录时，同时从 {site} 云端删除',
+            conversationsSyncRenameLabel: '重命名时同步云端',
+            conversationsSyncRenameDesc: '修改会话标题时，同时在 {site} 侧边栏更新标题',
         },
         'zh-TW': {
             panelTitle: 'Gemini 助手',
@@ -468,6 +479,12 @@
             conversationsSyncDeleteTitle: '同步刪除',
             conversationsSyncDeleteMsg: '檢測到 {count} 個會話已在雲端刪除，是否同步刪除本地記錄？',
             conversationsDeleted: '已移除',
+            // 會話設置
+            conversationsSettingsTitle: '會話設置',
+            conversationsSyncDeleteLabel: '刪除時同步刪除雲端',
+            conversationsSyncDeleteDesc: '刪除本地會話記錄時，同時從 {site} 雲端刪除',
+            conversationsSyncRenameLabel: '重命名時同步雲端',
+            conversationsSyncRenameDesc: '修改會話標題時，同時在 {site} 側邊欄更新標題',
         },
         en: {
             panelTitle: 'Gemini Helper',
@@ -656,6 +673,12 @@
             conversationsSyncDeleteTitle: 'Sync Deletion',
             conversationsSyncDeleteMsg: '{count} conversation(s) have been deleted from cloud. Remove local records?',
             conversationsDeleted: 'Removed',
+            // Conversation settings
+            conversationsSettingsTitle: 'Conversation Settings',
+            conversationsSyncDeleteLabel: 'Sync delete to cloud',
+            conversationsSyncDeleteDesc: 'When deleting local record, also delete from {site} cloud',
+            conversationsSyncRenameLabel: 'Sync rename to cloud',
+            conversationsSyncRenameDesc: 'When renaming conversation, also update title in {site} sidebar',
         },
     };
 
@@ -4965,7 +4988,7 @@
                 showCollapsedAnchor: GM_getValue('gemini_show_collapsed_anchor', true),
                 tabSettings: { ...DEFAULT_TAB_SETTINGS, ...GM_getValue(SETTING_KEYS.TAB_SETTINGS, {}) },
                 readingHistory: { ...DEFAULT_READING_HISTORY_SETTINGS, ...GM_getValue(SETTING_KEYS.READING_HISTORY, {}) },
-                conversations: GM_getValue('gemini_conversations_settings', { enabled: true }),
+                conversations: { ...DEFAULT_CONVERSATIONS_SETTINGS, ...GM_getValue('gemini_conversations_settings', {}) },
             };
         }
 
@@ -7149,6 +7172,48 @@
 
             const otherSettingsSection = this.createCollapsibleSection(this.t('otherSettingsTitle'), otherSettingsContainer, { defaultExpanded: false });
 
+            // 8. 会话设置
+            const conversationsSettingsContainer = createElement('div', {});
+            const siteName = this.siteAdapter.getName();
+
+            // 8.1 重命名时同步云端
+            const syncRenameItem = createElement('div', { className: 'setting-item' });
+            const syncRenameInfo = createElement('div', { className: 'setting-item-info' });
+            syncRenameInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('conversationsSyncRenameLabel')));
+            syncRenameInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('conversationsSyncRenameDesc').replace('{site}', siteName)));
+            const syncRenameToggle = createElement('div', {
+                className: 'setting-toggle' + (this.settings.conversations?.syncRenameToCloud ? ' active' : ''),
+            });
+            syncRenameToggle.addEventListener('click', () => {
+                this.settings.conversations.syncRenameToCloud = !this.settings.conversations.syncRenameToCloud;
+                syncRenameToggle.classList.toggle('active', this.settings.conversations.syncRenameToCloud);
+                this.saveSettings();
+                showToast(this.settings.conversations.syncRenameToCloud ? this.t('settingOn') : this.t('settingOff'));
+            });
+            syncRenameItem.appendChild(syncRenameInfo);
+            syncRenameItem.appendChild(syncRenameToggle);
+            conversationsSettingsContainer.appendChild(syncRenameItem);
+
+            // 8.2 删除时同步删除云端
+            const syncDeleteItem = createElement('div', { className: 'setting-item' });
+            const syncDeleteInfo = createElement('div', { className: 'setting-item-info' });
+            syncDeleteInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('conversationsSyncDeleteLabel')));
+            syncDeleteInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('conversationsSyncDeleteDesc').replace('{site}', siteName)));
+            const syncDeleteToggle = createElement('div', {
+                className: 'setting-toggle' + (this.settings.conversations?.syncDeleteToCloud ? ' active' : ''),
+            });
+            syncDeleteToggle.addEventListener('click', () => {
+                this.settings.conversations.syncDeleteToCloud = !this.settings.conversations.syncDeleteToCloud;
+                syncDeleteToggle.classList.toggle('active', this.settings.conversations.syncDeleteToCloud);
+                this.saveSettings();
+                showToast(this.settings.conversations.syncDeleteToCloud ? this.t('settingOn') : this.t('settingOff'));
+            });
+            syncDeleteItem.appendChild(syncDeleteInfo);
+            syncDeleteItem.appendChild(syncDeleteToggle);
+            conversationsSettingsContainer.appendChild(syncDeleteItem);
+
+            const conversationsSettingsSection = this.createCollapsibleSection(this.t('conversationsSettingsTitle'), conversationsSettingsContainer, { defaultExpanded: false });
+
             // ========== 统一管理分类顺序 ==========
             // 1. 通用设置（语言）- 已在上方添加
             // 2. 标签页设置
@@ -7165,6 +7230,8 @@
             content.appendChild(layoutSection);
             // 8. 其他设置
             content.appendChild(otherSettingsSection);
+            // 9. 会话设置
+            content.appendChild(conversationsSettingsSection);
 
             container.appendChild(content);
         }
