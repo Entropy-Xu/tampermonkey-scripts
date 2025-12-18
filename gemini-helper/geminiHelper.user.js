@@ -1297,7 +1297,7 @@
          * @returns {Array<{id: string, title: string, url: string, isActive: boolean}>}
          */
         getConversationList() {
-            const items = document.querySelectorAll('.conversation');
+            const items = DOMToolkit.query('.conversation', { all: true }) || [];
             return Array.from(items)
                 .map((el) => {
                     // 从 jslog 属性中提取会话 ID
@@ -3485,7 +3485,7 @@
             title.addEventListener('click', (e) => {
                 e.stopPropagation();
                 // 尝试模拟点击侧边栏中对应的会话项（无刷新切换）
-                const sidebarItem = document.querySelector(`.conversation[jslog*="${conv.id}"]`);
+                const sidebarItem = DOMToolkit.query(`.conversation[jslog*="${conv.id}"]`);
                 if (sidebarItem) {
                     sidebarItem.click();
                 } else if (conv.url) {
