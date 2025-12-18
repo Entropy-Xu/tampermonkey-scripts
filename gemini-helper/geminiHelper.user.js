@@ -4248,11 +4248,20 @@
                 .hidden { display: none !important; }
                 .outline-hidden { display: none !important; }
                 .gemini-toast {
-                    position: fixed !important; top: 20px !important; left: 50% !important; transform: translateX(-50%) !important;
-                    background: #10b981; color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000001 !important; animation: toastSlideIn 0.3s;
+                    position: fixed !important; top: 32px !important; left: 50% !important; transform: translateX(-50%) !important;
+                    background: ${gradient}; /* 品牌渐变色 */
+                    color: white; /* 渐变色背景通常较深，配白字 */
+                    padding: 10px 24px; border-radius: 9999px; font-size: 14px; font-weight: 500;
+                    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+                    z-index: 1000001 !important; animation: toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                    border: 1px solid rgba(255, 255, 255, 0.15); /* 增加一点白色内描边提升精致感 */
+                    display: flex; align-items: center; justify-content: center; gap: 8px;
+                    pointer-events: none;
                 }
-                @keyframes toastSlideIn { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+                @keyframes toastSlideIn {
+                    from { transform: translate(-50%, -20px) scale(0.95); opacity: 0; }
+                    to { transform: translate(-50%, 0) scale(1); opacity: 1; }
+                }
                 /* 快捷跳转按钮组（面板内） */
                 .scroll-nav-container {
                     display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #e5e7eb;
