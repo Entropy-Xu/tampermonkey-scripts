@@ -4248,9 +4248,9 @@
                 .hidden { display: none !important; }
                 .outline-hidden { display: none !important; }
                 .gemini-toast {
-                    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #10b981;
-                    color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000001; animation: toastSlideIn 0.3s;
+                    position: fixed !important; top: 20px !important; left: 50% !important; transform: translateX(-50%) !important;
+                    background: #10b981; color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000001 !important; animation: toastSlideIn 0.3s;
                 }
                 @keyframes toastSlideIn { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
                 /* 快捷跳转按钮组（面板内） */
