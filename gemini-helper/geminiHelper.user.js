@@ -3841,7 +3841,12 @@
 
             // 全选复选框（仅批量模式下显示）
             if (this.batchMode) {
-                const conversationsInFolder = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id);
+                // 搜索模式下只处理匹配的会话
+                let conversationsInFolder = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id);
+                if (this.searchQuery && this.searchResult) {
+                    conversationsInFolder = conversationsInFolder.filter((c) => this.searchResult.conversationMatches?.has(c.id));
+                }
+
                 const allSelected = conversationsInFolder.length > 0 && conversationsInFolder.every((c) => this.selectedIds.has(c.id));
                 const someSelected = !allSelected && conversationsInFolder.some((c) => this.selectedIds.has(c.id));
 
@@ -3855,10 +3860,10 @@
                 checkbox.addEventListener('click', (e) => e.stopPropagation());
                 checkbox.addEventListener('change', () => {
                     if (checkbox.checked) {
-                        // 全选
+                        // 全选（仅匹配项）
                         conversationsInFolder.forEach((c) => this.selectedIds.add(c.id));
                     } else {
-                        // 全不选
+                        // 全不选（仅匹配项）
                         conversationsInFolder.forEach((c) => this.selectedIds.delete(c.id));
                     }
                     this.createUI(); // 使用 createUI 重绘以更新状态
@@ -3867,16 +3872,18 @@
             }
 
             info.appendChild(createElement('span', { className: 'conversations-folder-icon' }, folder.icon));
-            info.appendChild(
-                createElement(
-                    'span',
-                    {
-                        className: 'conversations-folder-name',
-                        title: folderName,
-                    },
-                    folderName,
-                ),
-            );
+
+            // 文件夹名称（支持搜索高亮）
+            const nameSpan = createElement('span', {
+                className: 'conversations-folder-name',
+                title: folderName,
+            });
+            if (this.searchQuery && this.searchResult?.folderMatches?.has(folder.id)) {
+                nameSpan.appendChild(this.highlightText(folderName, this.searchQuery));
+            } else {
+                nameSpan.textContent = folderName;
+            }
+            info.appendChild(nameSpan);
 
             // 上下排序按钮（悬浮时在名称区域右侧显示，不占空间）
             if (!folder.isDefault) {
@@ -3920,8 +3927,11 @@
             // 右侧控制区域（计数 + 菜单按钮）
             const controls = createElement('div', { className: 'conversations-folder-controls' });
 
-            // 会话计数
-            const count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id).length;
+            // 会话计数（搜索模式下显示匹配数量）
+            let count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id).length;
+            if (this.searchQuery && this.searchResult) {
+                count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id && this.searchResult.conversationMatches?.has(c.id)).length;
+            }
             controls.appendChild(createElement('span', { className: 'conversations-folder-count' }, `(${count})`));
 
             // 操作菜单按钮（始终渲染以保持对齐，默认文件夹隐藏）
