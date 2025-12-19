@@ -234,6 +234,8 @@
             outlineLevel2: '至 2 级',
             outlineLevel3: '至 3 级',
             // 刷新按钮提示
+            togglePrompts: '显示/隐藏提示词',
+            toggleConversations: '显示/隐藏会话管理',
             refreshPrompts: '刷新提示词',
             refreshOutline: '刷新大纲',
             refreshSettings: '刷新设置',
@@ -6321,6 +6323,10 @@
             GM_setValue('gemini_prevent_auto_scroll', settings.preventAutoScroll);
             // 保存阅读历史设置
             GM_setValue(SETTING_KEYS.READING_HISTORY, settings.readingHistory);
+            // 保存会话设置
+            if (settings.conversations) {
+                GM_setValue('gemini_conversations_settings', settings.conversations);
+            }
         }
     }
 
@@ -8144,6 +8150,34 @@
                         showToast(this.settings.prompts.enabled ? this.t('settingOn') : this.t('settingOff'));
                     });
                     controls.appendChild(promptsToggle);
+                }
+
+                // 特殊处理：如果是会话 Tab，在排序按钮旁边添加开关
+                if (tabId === 'conversations') {
+                    // 确保 conversations 设置对象存在
+                    if (!this.settings.conversations) {
+                        this.settings.conversations = { enabled: true };
+                    }
+                    const conversationsToggle = createElement('div', {
+                        className: 'setting-toggle' + (this.settings.conversations?.enabled !== false ? ' active' : ''),
+                        id: 'toggle-conversations-inline',
+                        style: 'transform: scale(0.8); margin-right: 12px;',
+                        title: this.t('toggleConversations'),
+                    });
+                    conversationsToggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.settings.conversations.enabled = !this.settings.conversations.enabled;
+                        conversationsToggle.classList.toggle('active', this.settings.conversations.enabled);
+                        this.saveSettings();
+
+                        const conversationsTab = document.getElementById('conversations-tab');
+                        if (conversationsTab) conversationsTab.classList.toggle('hidden', !this.settings.conversations.enabled);
+
+                        if (!this.settings.conversations.enabled && this.currentTab === 'conversations') this.switchTab('settings');
+
+                        showToast(this.settings.conversations.enabled ? this.t('settingOn') : this.t('settingOff'));
+                    });
+                    controls.appendChild(conversationsToggle);
                 }
 
                 const upBtn = createElement('button', {
