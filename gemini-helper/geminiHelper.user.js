@@ -1741,6 +1741,63 @@
             return !window.location.pathname.includes('/session/');
         }
 
+        /**
+         * 从侧边栏提取会话列表
+         * @returns {Array<{id: string, title: string, url: string, isActive: boolean}>}
+         */
+        getConversationList() {
+            // 1. 获取当前 Team ID (CID)
+            const currentPath = window.location.pathname;
+            const cidMatch = currentPath.match(/\/home\/cid\/([^\/]+)/);
+            const cid = cidMatch ? cidMatch[1] : '';
+
+            // 2. 查找会话列表
+            const items = DOMToolkit.query('.conversation', { all: true, shadow: true }) || [];
+
+            return Array.from(items)
+                .map((el) => {
+                    const button = DOMToolkit.query('button.list-item', { root: el }) || el.querySelector('button');
+                    if (!button) return null;
+
+                    const titleEl = DOMToolkit.query('.conversation-title', { root: button });
+                    const title = titleEl ? titleEl.textContent.trim() : '';
+
+                    // 3. 从 Menu Button ID 提取 Session ID
+                    // ID 格式: menu-8823153884416423953
+                    let id = '';
+                    const menuBtn = DOMToolkit.query('.conversation-action-menu-button', { root: button });
+                    if (menuBtn && menuBtn.id && menuBtn.id.startsWith('menu-')) {
+                        id = menuBtn.id.replace('menu-', '');
+                    }
+
+                    // Fallback: 如果没找到 menu 按钮，尝试从 URL (仅限当前选中项)
+                    const isActive = button.classList.contains('selected') || button.classList.contains('active') || button.getAttribute('aria-selected') === 'true';
+
+                    if (!id && isActive) {
+                        const urlMatch = currentPath.match(/\/session\/(\d+)/);
+                        if (urlMatch) id = urlMatch[1];
+                    }
+
+                    if (!id) return null;
+
+                    // 4. 构建完整 URL
+                    // 格式: https://business.gemini.google/home/cid/{cid}/r/session/{id}
+                    let url = `https://business.gemini.google/session/${id}`; // 默认(如果没 cid)
+                    if (cid) {
+                        url = `https://business.gemini.google/home/cid/${cid}/r/session/${id}`;
+                    }
+
+                    return {
+                        id: id,
+                        title: title,
+                        url: url,
+                        isActive: isActive,
+                        cid: cid, // 额外记录 cid，以备后用
+                    };
+                })
+                .filter((c) => c); // 过滤掉 null
+        }
+
         // 排除侧边栏 (mat-sidenav, mat-drawer) 中的 Shadow DOM
         shouldInjectIntoShadow(host) {
             if (host.closest('mat-sidenav') || host.closest('mat-drawer') || host.closest('[class*="bg-sidebar"]')) return false;
