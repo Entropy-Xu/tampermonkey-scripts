@@ -1742,43 +1742,53 @@
         }
 
         /**
+         * 获取当前的团队
+         */
+        getCurrentCid() {
+            const currentPath = window.location.pathname;
+            const cidMatch = currentPath.match(/\/home\/cid\/([^\/]+)/);
+            return cidMatch ? cidMatch[1] : '';
+        }
+
+        /**
          * 从侧边栏提取会话列表
          * @returns {Array<{id: string, title: string, url: string, isActive: boolean}>}
          */
         getConversationList() {
             // 1. 获取当前 Team ID (CID)
-            const currentPath = window.location.pathname;
-            const cidMatch = currentPath.match(/\/home\/cid\/([^\/]+)/);
-            const cid = cidMatch ? cidMatch[1] : '';
+            let cid = this.getCurrentCid();
 
             // 2. 查找会话列表
+            // 注意：DOMToolkit 在 Shadow DOM 穿透时，后代选择器可能不生效
+            // 所以使用简单选择器 + 后续过滤来排除智能体
             const items = DOMToolkit.query('.conversation', { all: true, shadow: true });
 
             return Array.from(items)
                 .map((el) => {
-                    const button = DOMToolkit.query('button.list-item', { root: el }) || el.querySelector('button');
+                    // 注意：DOMToolkit.query 使用 parent 参数，不是 root
+                    const button = el.querySelector('button.list-item') || el.querySelector('button');
                     if (!button) return null;
 
-                    // Strict Filter: 必须包含操作菜单按钮 (排除 "新对话" 按钮)
-                    // 使用 DOMToolkit 查找，确保能穿透潜在的 shadow dom
-                    const menuBtn = DOMToolkit.query('.conversation-action-menu-button', { root: button });
-                    if (!menuBtn) return null;
-
-                    // 3. 从 Menu Button ID 提取 Session ID
-                    // ID 格式: menu-8823153884416423953
+                    // 从操作菜单按钮 ID 提取 Session ID
+                    // 会话格式: menu-8823153884416423953 (纯数字)
+                    // 智能体格式: menu-deep_research (包含字母/下划线)
+                    const menuBtn = button.querySelector('.conversation-action-menu-button');
                     let id = '';
-                    if (menuBtn.id && menuBtn.id.startsWith('menu-')) {
+                    if (menuBtn && menuBtn.id && menuBtn.id.startsWith('menu-')) {
                         id = menuBtn.id.replace('menu-', '');
                     }
 
-                    if (!id) return null;
+                    // 关键过滤：真正的会话 ID 是纯数字，智能体 ID 包含字母
+                    // 例如：会话 ID = "452535969834780805"，智能体 ID = "deep_research"
+                    if (!id || !/^\d+$/.test(id)) return null;
 
-                    const titleEl = DOMToolkit.query('.conversation-title', { root: button });
+                    // 获取标题
+                    const titleEl = button.querySelector('.conversation-title');
                     const title = titleEl ? titleEl.textContent.trim() : '';
 
                     const isActive = button.classList.contains('selected') || button.classList.contains('active') || button.getAttribute('aria-selected') === 'true';
 
-                    // 4. 构建完整 URL
+                    // 构建完整 URL
                     // 格式: https://business.gemini.google/home/cid/{cid}/r/session/{id}
                     let url = `https://business.gemini.google/session/${id}`; // 默认(如果没 cid)
                     if (cid) {
