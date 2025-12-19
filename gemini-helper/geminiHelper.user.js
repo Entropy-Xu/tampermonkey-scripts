@@ -341,6 +341,8 @@
             conversationsTagCreated: '标签已创建',
             conversationsTagUpdated: '标签已更新',
             conversationsTagDeleted: '标签已删除',
+            conversationsTagExists: '标签名称已存在',
+            conversationsUpdateTag: '更新标签',
             conversationsNoTags: '暂无标签',
             conversationsManageTags: '管理标签',
         },
@@ -555,6 +557,8 @@
             conversationsTagCreated: '標籤已建立',
             conversationsTagUpdated: '標籤已更新',
             conversationsTagDeleted: '標籤已刪除',
+            conversationsTagExists: '標籤名稱已存在',
+            conversationsUpdateTag: '更新標籤',
             conversationsNoTags: '暫無標籤',
             conversationsManageTags: '管理標籤',
         },
@@ -768,6 +772,8 @@
             conversationsTagCreated: 'Tag Created',
             conversationsTagUpdated: 'Tag Updated',
             conversationsTagDeleted: 'Tag Deleted',
+            conversationsTagExists: 'Tag name already exists',
+            conversationsUpdateTag: 'Update Tag',
             conversationsNoTags: 'No Tags',
             conversationsManageTags: 'Manage Tags',
             conversationsSetTags: 'Set Tags',
@@ -4623,6 +4629,14 @@
          */
         createTag(name, color) {
             if (!this.data.tags) this.data.tags = [];
+
+            // Check duplicate
+            const exists = this.data.tags.some((t) => t.name.toLowerCase() === name.toLowerCase());
+            if (exists) {
+                showToast(this.t('conversationsTagExists') || '标签名称已存在');
+                return null;
+            }
+
             const tag = {
                 id: 'tag_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
                 name,
@@ -4641,6 +4655,14 @@
          */
         updateTag(tagId, name, color) {
             if (!this.data.tags) return null;
+
+            // Check duplicate (exclude self)
+            const exists = this.data.tags.some((t) => t.id !== tagId && t.name.toLowerCase() === name.toLowerCase());
+            if (exists) {
+                showToast(this.t('conversationsTagExists') || '标签名称已存在');
+                return null;
+            }
+
             const tag = this.data.tags.find((t) => t.id === tagId);
             if (tag) {
                 tag.name = name;
@@ -5223,7 +5245,7 @@
                         nameInput.value = tag.name;
                         updateColorSelection(tag.color);
                         editingId = tag.id;
-                        addBtn.textContent = this.t('conversationsTagUpdated') || '更新';
+                        addBtn.textContent = this.t('conversationsUpdateTag') || '更新标签';
                     });
                     actions.appendChild(editBtn);
 
@@ -5300,20 +5322,28 @@
                 const name = nameInput.value.trim();
                 if (!name) return;
 
+                let result;
                 if (editingId) {
-                    this.updateTag(editingId, name, selectedColor);
-                    editingId = null;
-                    addBtn.textContent = this.t('conversationsNewTag') || '新建标签';
+                    result = this.updateTag(editingId, name, selectedColor);
                 } else {
-                    this.createTag(name, selectedColor);
+                    result = this.createTag(name, selectedColor);
                 }
 
-                nameInput.value = '';
-                renderList();
-                if (conv) {
-                    const list = this.container.querySelector(`.conversations-list[data-folder-id="${conv.folderId}"]`);
-                    if (list) this.renderConversationList(conv.folderId, list);
+                if (result) {
+                    // Success
+                    if (editingId) {
+                        editingId = null;
+                        addBtn.textContent = this.t('conversationsNewTag') || '新建标签';
+                    }
+                    nameInput.value = '';
+                    // Reset color selection? Maybe keep it.
+                    renderList();
+                    if (conv) {
+                        const list = this.container.querySelector(`.conversations-list[data-folder-id="${conv.folderId}"]`);
+                        if (list) this.renderConversationList(conv.folderId, list);
+                    }
                 }
+                // If result is null, validation failed (toast already shown), keep input for user to fix
             });
 
             formSection.appendChild(addBtn);
