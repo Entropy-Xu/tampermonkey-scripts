@@ -4304,14 +4304,37 @@
             const dialog = createElement('div', { className: 'conversations-dialog' });
             dialog.appendChild(createElement('div', { className: 'conversations-dialog-title' }, `移动 ${this.selectedIds.size} 个会话到...`));
 
-            // 搜索框
+            // 搜索框 + 新建文件夹按钮
+            const searchRow = createElement('div', {
+                style: 'display: flex; gap: 8px; margin-bottom: 8px; align-items: center;',
+            });
             const searchInput = createElement('input', {
                 type: 'text',
                 className: 'conversations-dialog-search',
                 placeholder: '搜索文件夹...',
-                style: 'width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; font-size: 13px;',
+                style: 'flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; font-size: 13px;',
             });
-            dialog.appendChild(searchInput);
+            const addFolderBtn = createElement('button', {
+                className: 'conversations-dialog-add-folder-btn',
+                title: this.t('conversationsAddFolder') || '新建文件夹',
+                style: 'width: 36px; height: 36px; border: 1px solid #d1d5db; border-radius: 4px; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center;',
+            });
+            const addSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            addSvg.setAttribute('viewBox', '0 0 24 24');
+            addSvg.setAttribute('fill', '#6b7280');
+            addSvg.setAttribute('width', '18');
+            addSvg.setAttribute('height', '18');
+            const addPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            addPath.setAttribute('d', 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z');
+            addSvg.appendChild(addPath);
+            addFolderBtn.appendChild(addSvg);
+            addFolderBtn.addEventListener('click', () => {
+                overlay.remove();
+                this.showCreateFolderDialog();
+            });
+            searchRow.appendChild(searchInput);
+            searchRow.appendChild(addFolderBtn);
+            dialog.appendChild(searchRow);
 
             // 文件夹列表容器
             const list = createElement('div', { className: 'conversations-folder-select-list' });
@@ -4391,14 +4414,37 @@
             const dialog = createElement('div', { className: 'conversations-dialog' });
             dialog.appendChild(createElement('div', { className: 'conversations-dialog-title' }, this.t('conversationsMoveTo') || '移动到...'));
 
-            // 搜索框
+            // 搜索框 + 新建文件夹按钮
+            const searchRow = createElement('div', {
+                style: 'display: flex; gap: 8px; margin-bottom: 8px; align-items: center;',
+            });
             const searchInput = createElement('input', {
                 type: 'text',
                 className: 'conversations-dialog-search',
                 placeholder: '搜索文件夹...',
-                style: 'width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; font-size: 13px;',
+                style: 'flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; font-size: 13px;',
             });
-            dialog.appendChild(searchInput);
+            const addFolderBtn = createElement('button', {
+                className: 'conversations-dialog-add-folder-btn',
+                title: this.t('conversationsAddFolder') || '新建文件夹',
+                style: 'width: 36px; height: 36px; border: 1px solid #d1d5db; border-radius: 4px; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center;',
+            });
+            const addSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            addSvg.setAttribute('viewBox', '0 0 24 24');
+            addSvg.setAttribute('fill', '#6b7280');
+            addSvg.setAttribute('width', '18');
+            addSvg.setAttribute('height', '18');
+            const addPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            addPath.setAttribute('d', 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z');
+            addSvg.appendChild(addPath);
+            addFolderBtn.appendChild(addSvg);
+            addFolderBtn.addEventListener('click', () => {
+                overlay.remove();
+                this.showCreateFolderDialog();
+            });
+            searchRow.appendChild(searchInput);
+            searchRow.appendChild(addFolderBtn);
+            dialog.appendChild(searchRow);
 
             // 文件夹列表
             const list = createElement('div', { className: 'conversations-folder-select-list' });
