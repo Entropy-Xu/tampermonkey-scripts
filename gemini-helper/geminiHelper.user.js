@@ -1809,14 +1809,50 @@
         }
 
         /**
-         * 获取侧边栏可滚动容器（用于滚动加载全部会话）
-         * Gemini Business 在 Shadow DOM 中，需要穿透查找
+         * 获取侧边栏可滚动容器
          * @returns {Element|null}
          */
         getSidebarScrollContainer() {
-            // 尝试查找会话列表的可滚动容器
-            // 可能的选择器: .conversation-list, mat-sidenav, [class*="sidebar"]
-            return DOMToolkit.query('.conversation-list', { shadow: true }) || DOMToolkit.query('mat-sidenav', { shadow: true }) || DOMToolkit.query('[class*="sidebar-content"]', { shadow: true });
+            return DOMToolkit.query('.conversation-list', { shadow: true }) || DOMToolkit.query('mat-sidenav', { shadow: true });
+        }
+
+        /**
+         * 加载所有会话
+         * 通过点击"展开"按钮来加载更多会话，而不是滚动
+         * @returns {Promise<void>}
+         */
+        async loadAllConversations() {
+            let expandedCount = 0;
+            const maxIterations = 20; // 防止无限循环
+
+            for (let i = 0; i < maxIterations; i++) {
+                // 查找所有按钮（穿透 Shadow DOM）
+                const allBtns = DOMToolkit.query('button.show-more', { all: true, shadow: true }) || [];
+
+                // 过滤出未展开的按钮（icon 没有 more-visible class）
+                const expandBtns = allBtns.filter((btn) => {
+                    const icon = btn.querySelector('.show-more-icon');
+                    // 已展开的按钮 icon 有 more-visible class
+                    return icon && !icon.classList.contains('more-visible');
+                });
+
+                if (expandBtns.length === 0) {
+                    break; // 没有更多需要展开的按钮
+                }
+
+                // 点击所有展开按钮
+                for (const btn of expandBtns) {
+                    btn.click();
+                    expandedCount++;
+                }
+
+                // 等待会话加载
+                await new Promise((r) => setTimeout(r, 300));
+            }
+
+            if (expandedCount > 0) {
+                console.log(`[GeminiBusinessAdapter] 展开了 ${expandedCount} 个会话分组`);
+            }
         }
 
         // 排除侧边栏 (mat-sidenav, mat-drawer) 中的 Shadow DOM
