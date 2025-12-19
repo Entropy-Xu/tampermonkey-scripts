@@ -3935,7 +3935,7 @@
             }
 
             // 搜索模式下的过滤逻辑
-            const isSearching = this.searchQuery && this.searchResult;
+            const isSearching = !!this.searchResult;
             const { folderMatches, conversationMatches, conversationFolderMap } = this.searchResult || {};
 
             // 计算搜索时哪些文件夹有匹配的会话（需要展开父级）
@@ -4045,7 +4045,7 @@
             if (this.batchMode) {
                 // 搜索模式下只处理匹配的会话
                 let conversationsInFolder = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id);
-                if (this.searchQuery && this.searchResult) {
+                if (this.searchResult) {
                     conversationsInFolder = conversationsInFolder.filter((c) => this.searchResult.conversationMatches?.has(c.id));
                 }
 
@@ -4131,7 +4131,7 @@
 
             // 会话计数（搜索模式下显示匹配数量）
             let count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id).length;
-            if (this.searchQuery && this.searchResult) {
+            if (this.searchResult) {
                 count = Object.values(this.data.conversations).filter((c) => c.folderId === folder.id && this.searchResult.conversationMatches?.has(c.id)).length;
             }
             controls.appendChild(createElement('span', { className: 'conversations-folder-count' }, `(${count})`));
@@ -4164,7 +4164,7 @@
             let conversations = Object.values(this.data.conversations).filter((c) => c.folderId === folderId);
 
             // 搜索模式下过滤不匹配的会话
-            const isSearching = this.searchQuery && this.searchResult;
+            const isSearching = !!this.searchResult;
             if (isSearching) {
                 const { conversationMatches } = this.searchResult;
                 conversations = conversations.filter((c) => conversationMatches?.has(c.id));
@@ -5039,7 +5039,7 @@
          */
         handleSearch(query) {
             this.searchQuery = query;
-            if (!query) {
+            if (!query && (!this.filterTagIds || this.filterTagIds.size === 0)) {
                 // 清空搜索时重置
                 this.searchResult = null;
                 this.refreshAfterSearch();
@@ -5063,7 +5063,7 @@
             const conversationFolderMap = new Map(); // 会话 ID -> 所属文件夹 ID（用于展开父级）
 
             // 1. 遍历文件夹，匹配名称
-            if (this.data && this.data.folders) {
+            if (this.data && this.data.folders && lowerQuery) {
                 this.data.folders.forEach((folder) => {
                     if (folder.name.toLowerCase().includes(lowerQuery)) {
                         folderMatches.add(folder.id);
@@ -5100,7 +5100,7 @@
             // 更新结果条
             const resultBar = document.getElementById('conversations-result-bar');
             if (resultBar) {
-                if (this.searchQuery && this.searchResult) {
+                if (this.searchResult) {
                     resultBar.textContent = `${this.searchResult.totalCount} ${this.t('conversationsSearchResult') || '个结果'}`;
                     resultBar.classList.add('visible');
                 } else {
