@@ -4279,7 +4279,7 @@
                 info.appendChild(checkbox);
             }
 
-            info.appendChild(createElement('span', { className: 'conversations-folder-icon' }, folder.icon));
+            info.appendChild(createElement('span', { className: 'conversations-folder-icon', style: 'user-select: none;' }, folder.icon));
 
             // 文件夹名称（支持搜索高亮）
             const nameSpan = createElement('span', {
@@ -4295,7 +4295,7 @@
 
             // 上下排序按钮（悬浮时在名称区域右侧显示，不占空间）
             if (!folder.isDefault) {
-                const orderBtns = createElement('div', { className: 'conversations-folder-order-btns' });
+                const orderBtns = createElement('div', { className: 'conversations-folder-order-btns', style: 'user-select: none;' });
 
                 const upBtn = createElement(
                     'button',
@@ -4427,6 +4427,7 @@
             const title = createElement('span', {
                 className: 'conversations-item-title',
                 title: conv.title,
+                style: 'user-select: none;',
             });
             if (this.searchQuery && this.searchResult?.conversationMatches?.has(conv.id)) {
                 title.appendChild(this.highlightText(conv.title || '无标题', this.searchQuery));
@@ -4464,7 +4465,7 @@
 
             // Tags (Insert after title)
             if (conv.tagIds && conv.tagIds.length > 0 && this.data.tags) {
-                const tagList = createElement('div', { className: 'conversations-tag-list' });
+                const tagList = createElement('div', { className: 'conversations-tag-list', style: 'user-select: none;' });
                 conv.tagIds.forEach((tagId) => {
                     const tagDef = this.data.tags.find((t) => t.id === tagId);
                     if (tagDef) {
@@ -5431,8 +5432,9 @@
                     // 左侧：勾选框（如果有会话上下文）+ 预览
                     const left = createElement('div', { style: 'display:flex; align-items:center; gap:8px;' });
 
+                    let checkbox = null;
                     if (conv) {
-                        const checkbox = createElement('input', { type: 'checkbox' });
+                        checkbox = createElement('input', { type: 'checkbox' });
                         checkbox.checked = conv.tagIds && conv.tagIds.includes(tag.id);
                         checkbox.addEventListener('change', () => {
                             let newTags = conv.tagIds || [];
@@ -5446,6 +5448,7 @@
                             const list = this.container.querySelector(`.conversations-list[data-folder-id="${conv.folderId}"]`);
                             if (list) this.renderConversationList(conv.folderId, list);
                         });
+                        checkbox.addEventListener('click', (e) => e.stopPropagation()); // 防止点击 checkbox 触发行点击
                         left.appendChild(checkbox);
                     }
 
@@ -5472,7 +5475,8 @@
                         },
                         '✎',
                     );
-                    editBtn.addEventListener('click', () => {
+                    editBtn.addEventListener('click', (e) => {
+                        e.stopPropagation(); // 防止触发行点击
                         nameInput.value = tag.name;
                         updateColorSelection(tag.color);
                         editingId = tag.id;
@@ -5488,7 +5492,8 @@
                         },
                         '×',
                     );
-                    delBtn.addEventListener('click', () => {
+                    delBtn.addEventListener('click', (e) => {
+                        e.stopPropagation(); // 防止触发行点击
                         if (confirm(this.t('confirmDelete') || '确定删除?')) {
                             this.deleteTag(tag.id);
                             renderList();
@@ -5498,6 +5503,16 @@
                     actions.appendChild(delBtn);
 
                     item.appendChild(actions);
+
+                    // 整行点击切换 checkbox（仅在有会话上下文时）
+                    if (conv && checkbox) {
+                        item.style.cursor = 'pointer';
+                        item.addEventListener('click', () => {
+                            checkbox.checked = !checkbox.checked;
+                            checkbox.dispatchEvent(new Event('change')); // 触发 change 事件更新数据
+                        });
+                    }
+
                     listContainer.appendChild(item);
                 });
             };
