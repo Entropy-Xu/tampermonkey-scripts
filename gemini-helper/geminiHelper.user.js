@@ -7222,13 +7222,13 @@
                 .conversations-item::before {
                     content: '';
                     position: absolute;
-                    left: 2px; /* Slightly offset from edge for card feel */
+                    left: 0;
                     top: 50%;
                     transform: translateY(-50%) scaleY(0);
                     width: 4px;
-                    height: 20px;
-                    background-color: #6366f1;
-                    border-radius: 4px; /* Fully rounded pill */
+                    height: 80%;
+                    background-color: #428cf1;
+                    border-radius: 0 4px 4px 0; /* 右侧圆角，左侧贴边 */
                     transition: transform 0.2s;
                 }
                 .conversations-item:hover::before {
