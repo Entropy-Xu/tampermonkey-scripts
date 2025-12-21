@@ -5524,9 +5524,10 @@
             // 聚焦输入框
             nameInput.focus();
 
-            // ESC 关闭
+            // ESC 关闭，Enter 确定
             overlay.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') overlay.remove();
+                if (e.key === 'Enter') confirmBtn.click();
             });
         }
 
@@ -5862,6 +5863,10 @@
                 className: 'conversations-dialog-input',
                 placeholder: this.t('conversationsTagName') || '标签名称',
                 style: 'flex:1; margin-bottom: 8px;',
+            });
+            // Enter 提交
+            nameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') addBtn.click();
             });
             formSection.appendChild(nameInput);
 
