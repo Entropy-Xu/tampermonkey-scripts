@@ -4161,6 +4161,14 @@
                 value: this.searchQuery || '',
             });
 
+            // 注入 placeholder 防选中样式
+            const placeholderStyle = document.createElement('style');
+            placeholderStyle.textContent = `
+                .conversations-search-input::-webkit-input-placeholder { user-select: none; }
+                .conversations-search-input::placeholder { user-select: none; }
+            `;
+            searchWrapper.appendChild(placeholderStyle);
+
             // 搜索输入防抖处理
             let searchTimeout = null;
             searchInput.addEventListener('input', () => {
@@ -4182,6 +4190,7 @@
                 {
                     className: 'conversations-pin-filter-btn' + (this.filterPinned ? ' active' : ''),
                     title: this.t('conversationsFilterPinned') || '筛选置顶',
+                    style: 'user-select: none;',
                 },
                 '📌',
             );
@@ -4200,6 +4209,7 @@
                 {
                     className: 'conversations-tag-search-btn' + (this.data.tags && this.data.tags.length > 0 ? '' : ' empty') + (isTagFiltering ? ' active' : ''),
                     title: this.t('conversationsFilterByTags') || '按标签筛选',
+                    style: 'user-select: none;',
                 },
                 '🏷️',
             );
@@ -4613,7 +4623,7 @@
             controls.appendChild(createElement('span', { className: 'conversations-folder-count' }, `(${count})`));
 
             // 操作菜单按钮（始终渲染以保持对齐，默认文件夹隐藏）
-            const menuBtn = createElement('button', { className: 'conversations-folder-menu-btn' }, '⋯');
+            const menuBtn = createElement('button', { className: 'conversations-folder-menu-btn', style: 'user-select: none;' }, '⋯');
             if (folder.isDefault) {
                 menuBtn.style.visibility = 'hidden';
                 menuBtn.style.pointerEvents = 'none'; // 避免阻挡点击
@@ -4797,7 +4807,7 @@
             const time = createElement('span', { className: 'conversations-item-time' }, this.formatTime(conv.updatedAt));
             metaContainer.appendChild(time);
 
-            const menuBtn = createElement('button', { className: 'conversations-item-menu-btn' }, '⋯');
+            const menuBtn = createElement('button', { className: 'conversations-item-menu-btn', style: 'user-select: none;' }, '⋯');
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.showConversationMenu(conv, menuBtn);
