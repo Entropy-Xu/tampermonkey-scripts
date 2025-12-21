@@ -48,6 +48,9 @@
         READING_HISTORY: 'gemini_reading_history_settings',
         TAB_SETTINGS: 'gemini_tab_settings',
         CONVERSATIONS: 'gemini_conversations',
+        DEFAULT_PANEL_STATE: 'gemini_default_panel_state',
+        AUTO_HIDE_PANEL: 'gemini_default_auto_hide',
+        THEME_MODE: 'gemini_theme_mode', // 'light' | 'dark' | null
     };
 
     // 默认 Tab 顺序（settings 已移到 header 按钮，不参与排序）
@@ -209,6 +212,8 @@
             renameIntervalDesc: '检测对话名称变化的间隔时间',
             secondsSuffix: '秒',
             showStatusLabel: '显示生成状态',
+            toggleTheme: '切换亮/暗主题',
+            // 面板设置
             showStatusDesc: '在标签页标题中显示生成状态图标（⏳/✅）',
             showNotificationLabel: '发送桌面通知',
             showNotificationDesc: '生成完成时发送系统通知（目前仅 Gemini Business 有效）',
@@ -7150,8 +7155,12 @@
                 tabSettings: { ...DEFAULT_TAB_SETTINGS, ...GM_getValue(SETTING_KEYS.TAB_SETTINGS, {}) },
                 readingHistory: { ...DEFAULT_READING_HISTORY_SETTINGS, ...GM_getValue(SETTING_KEYS.READING_HISTORY, {}) },
                 conversations: { enabled: true },
-                defaultPanelState: GM_getValue('gemini_default_panel_state', true),
-                autoHidePanel: GM_getValue('gemini_default_auto_hide', false),
+                // 默认面板状态
+                defaultPanelState: GM_getValue(SETTING_KEYS.DEFAULT_PANEL_STATE, true),
+                // 自动隐藏面板
+                autoHidePanel: GM_getValue(SETTING_KEYS.AUTO_HIDE_PANEL, false),
+                // 主题模式 (null=跟随系统/默认, 'light', 'dark')
+                themeMode: GM_getValue('gemini_theme_mode', null),
             };
         }
 
@@ -7211,6 +7220,11 @@
             this.i18n = I18N[this.lang]; // 当前语言文本
             this.settingsManager = new SettingsManager();
             this.settings = this.loadSettings(); // 加载设置
+
+            // Restore saved theme preference if exists
+            if (this.settings.themeMode) {
+                this.applyTheme(this.settings.themeMode);
+            }
 
             // 根据设置初始化面板折叠状态 (默认显示面板 -> !collapsed)
             this.isCollapsed = !this.settings.defaultPanelState;
@@ -8341,17 +8355,40 @@
             if (!panel) return;
 
             const checkTheme = () => {
+                // 1. Detect current state from DOM
+                const bodyClass = document.body.className;
+                // dark-theme is the key class for both versions
+                const hasDarkClass = /\bdark-theme\b/i.test(bodyClass);
+                // Fallback checks just in case
                 const dataTheme = document.body.dataset.theme || document.documentElement.dataset.theme;
                 const isDarkTheme = dataTheme === 'dark';
-                const bodyClass = document.body.className;
-                const hasDarkClass = /\bdark\b|\bdark-mode\b|\bdark-theme\b/i.test(bodyClass);
 
-                const isDark = isDarkTheme || hasDarkClass;
+                const isDark = hasDarkClass || isDarkTheme;
 
+                // 2. Sync to Plugin UI (ghMode)
                 if (isDark) {
                     document.body.dataset.ghMode = 'dark';
                 } else {
                     delete document.body.dataset.ghMode;
+                }
+
+                // 3. Sync to Settings (Persistence) & Button Icon
+                // Only update if changed to avoid redundant saves
+                const currentSavedMode = this.settings.themeMode;
+                const detectedMode = isDark ? 'dark' : 'light';
+
+                // Avoid saving on every check, only if truly changed from what we think it is
+                // But we need to distinguish between "detected change" and "just checking"
+                // Actually, just save it if it's different.
+                if (currentSavedMode !== detectedMode) {
+                    this.settings.themeMode = detectedMode;
+                    this.saveSettings();
+                    GM_setValue('gemini_theme_mode', detectedMode);
+                }
+
+                const themeBtn = document.getElementById('theme-toggle-btn');
+                if (themeBtn) {
+                    themeBtn.textContent = isDark ? '🌙' : '☀';
                 }
             };
 
@@ -8359,13 +8396,38 @@
 
             if (!this.themeObserver) {
                 this.themeObserver = new MutationObserver((mutations) => {
-                    // 避免循环触发：如果变动的是 data-gh-mode，则忽略（虽然 attributeFilter 已经排除了，但在某些浏览器/复杂场景下可能需要）
-                    // 由于我们只监听 class 和 data-theme, 修改 data-gh-mode 不会触发此 Observer。
                     checkTheme();
                 });
+                // Listen to class changes on body (primary method) and dataset attributes
                 this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
                 this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
             }
+        }
+
+        // 应用主题 (Web -> DOM)
+        applyTheme(targetMode) {
+            const mode = targetMode || this.settings.themeMode;
+            if (!mode) return;
+
+            if (mode === 'dark') {
+                document.body.classList.add('dark-theme');
+                document.body.classList.remove('light-theme'); // For standard version consistency
+            } else {
+                document.body.classList.remove('dark-theme');
+                // Only add light-theme if we are likely on Standard version (based on url or adapter)
+                // Gemini Business uses empty class for light. Standard uses 'light-theme'.
+                if (window.location.host === 'gemini.google.com') {
+                    document.body.classList.add('light-theme');
+                }
+            }
+        }
+
+        // 切换主题 (User Action)
+        toggleTheme() {
+            const bodyClass = document.body.className;
+            const isDark = /\bdark-theme\b/i.test(bodyClass);
+            const nextMode = isDark ? 'light' : 'dark';
+            this.applyTheme(nextMode);
         }
 
         createUI() {
@@ -8387,6 +8449,21 @@
             const title = createElement('div', { className: 'prompt-panel-title' });
             title.appendChild(createElement('span', {}, '✨'));
             title.appendChild(createElement('span', {}, this.t('panelTitle')));
+
+            // 主题切换按钮
+            const themeBtn = createElement('button', {
+                id: 'theme-toggle-btn',
+                className: 'prompt-panel-btn',
+                title: this.t('toggleTheme'),
+                style: 'width: 24px; height: 24px; font-size: 14px; padding: 0; background: transparent; border: none; margin-left: 8px;',
+            });
+            // Initial icon state (will be updated by monitorTheme immediately)
+            themeBtn.textContent = '☀';
+            themeBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.toggleTheme();
+            };
+            title.appendChild(themeBtn);
 
             const controls = createElement('div', { className: 'prompt-panel-controls' });
             const refreshBtn = createElement(
