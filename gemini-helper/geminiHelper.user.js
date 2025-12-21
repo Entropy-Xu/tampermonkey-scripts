@@ -5538,6 +5538,21 @@
             // 聚焦输入框
             nameInput.focus();
 
+            // 点击遮罩关闭 (智能行为：有输入则保存，无输入则关闭)
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    const name = nameInput.value.trim();
+                    // 这里我们复用 confirmBtn 的逻辑，因为 confirmBtn 里也只是调用 onConfirm
+                    // 但我们需要判断是否有效。
+                    // 用户的要求：输入了->新建/编辑；没有输入->关闭
+                    if (name) {
+                        confirmBtn.click();
+                    } else {
+                        overlay.remove();
+                    }
+                }
+            });
+
             // ESC 关闭，Enter 确定
             overlay.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') overlay.remove();
