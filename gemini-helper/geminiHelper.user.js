@@ -342,6 +342,13 @@
             conversationsUpdateTag: '更新标签',
             conversationsNoTags: '暂无标签',
             conversationsManageTags: '管理标签',
+            conversationsPin: '置顶📌',
+            conversationsUnpin: '取消置顶',
+            conversationsPinned: '已置顶',
+            conversationsUnpinned: '已取消置顶',
+            conversationsFilterPinned: '筛选置顶',
+            conversationsClearAll: '清除所有筛选',
+            conversationsBatchMode: '批量操作',
         },
         'zh-TW': {
             panelTitle: 'Gemini 助手',
@@ -558,6 +565,13 @@
             conversationsUpdateTag: '更新標籤',
             conversationsNoTags: '暫無標籤',
             conversationsManageTags: '管理標籤',
+            conversationsPin: '置頂📌',
+            conversationsUnpin: '取消置頂',
+            conversationsPinned: '已置頂',
+            conversationsUnpinned: '已取消置頂',
+            conversationsFilterPinned: '篩選置頂',
+            conversationsClearAll: '清除所有篩選',
+            conversationsBatchMode: '批次操作',
         },
         en: {
             panelTitle: 'Gemini Helper',
@@ -784,6 +798,13 @@
             conversationsTagDeleted: 'Tag Deleted',
             conversationsNoTags: 'No Tags',
             conversationsManageTags: 'Manage Tags',
+            conversationsPin: 'Pin📌',
+            conversationsUnpin: 'Unpin',
+            conversationsPinned: 'Pinned',
+            conversationsUnpinned: 'Unpinned',
+            conversationsFilterPinned: 'Filter Pinned',
+            conversationsClearAll: 'Clear all filters',
+            conversationsBatchMode: 'Batch Mode',
         },
     };
 
@@ -4091,7 +4112,7 @@
             // 4. 批量模式按钮
             const batchModeBtn = createElement('button', {
                 className: 'conversations-toolbar-btn batch-mode' + (this.batchMode ? ' active' : ''),
-                title: '批量操作',
+                title: this.t('conversationsBatchMode') || '批量操作',
                 id: 'conversations-batch-mode-btn',
                 style: 'display: flex; align-items: center; justify-content: center;',
             });
@@ -4113,35 +4134,6 @@
                 value: this.searchQuery || '',
             });
 
-            // 清空按钮 (Global Clear for both text and tags)
-            const hasInitialTags = this.filterTagIds && this.filterTagIds.size > 0;
-            const clearBtn = createElement(
-                'span',
-                {
-                    className: 'conversations-search-clear' + (this.searchQuery || hasInitialTags ? ' visible' : ''),
-                    id: 'conversations-search-clear',
-                },
-                '×',
-            );
-            // Update clear button visibility helper
-            const updateClearBtn = () => {
-                const hasText = searchInput.value.length > 0;
-                const hasTags = this.filterTagIds && this.filterTagIds.size > 0;
-                // Show global clear if there is ANY filter (text or tags)
-                clearBtn.classList.toggle('visible', hasText || hasTags);
-            };
-
-            clearBtn.addEventListener('click', () => {
-                searchInput.value = '';
-                // Clear both text and tags (Reset All)
-                if (this.filterTagIds) this.filterTagIds.clear();
-                const tagBtn = searchWrapper.querySelector('.conversations-tag-search-btn');
-                if (tagBtn) tagBtn.classList.remove('active');
-
-                this.handleSearch('');
-                updateClearBtn();
-            });
-
             // 搜索输入防抖处理
             let searchTimeout = null;
             searchInput.addEventListener('input', () => {
@@ -4152,8 +4144,27 @@
                 }, 150);
             });
 
-            searchWrapper.appendChild(searchInput);
-            searchWrapper.appendChild(clearBtn);
+            // Input Group (Input Only)
+            const inputGroup = createElement('div', { className: 'conversations-search-input-group' });
+            inputGroup.appendChild(searchInput);
+            searchWrapper.appendChild(inputGroup);
+
+            // 置顶筛选按钮
+            const pinFilterBtn = createElement(
+                'div',
+                {
+                    className: 'conversations-pin-filter-btn' + (this.filterPinned ? ' active' : ''),
+                    title: this.t('conversationsFilterPinned') || '筛选置顶',
+                },
+                '📌',
+            );
+            pinFilterBtn.addEventListener('click', () => {
+                this.filterPinned = !this.filterPinned;
+                pinFilterBtn.classList.toggle('active', this.filterPinned);
+                this.handleSearch(this.searchQuery || '');
+                updateClearBtn();
+            });
+            searchWrapper.appendChild(pinFilterBtn);
 
             // 标签筛选按钮
             const isTagFiltering = this.filterTagIds && this.filterTagIds.size > 0;
@@ -4166,9 +4177,10 @@
                 '🏷️',
             );
 
-            // Removed inner clear icon to avoid confusion. Global clear button handles reset.
+            // ... tag filter event listener ...
 
             tagFilterBtn.addEventListener('click', (e) => {
+                // ... existing implementation ...
                 e.stopPropagation();
 
                 const existingMenu = document.querySelector('.conversations-tag-filter-menu');
@@ -4250,7 +4262,7 @@
                 footer.appendChild(manageItem);
                 menu.appendChild(footer);
 
-                // Position relative to button? No, absolute in wrapper or document body?
+                // IMPORTANT: Append to wrapper for relative positioning
                 searchWrapper.appendChild(menu);
 
                 // Click outside to close
@@ -4262,8 +4274,45 @@
                 };
                 setTimeout(() => document.addEventListener('click', closeMenu), 0);
             });
-
             searchWrapper.appendChild(tagFilterBtn);
+
+            // 清空按钮 (Global Clear) - Moved to far right
+            // Re-use clearBtn but change its element type/class logic
+            const clearBtn = createElement(
+                'div',
+                {
+                    className: 'conversations-search-clear', // Style updated in CSS
+                    id: 'conversations-search-clear',
+                    title: this.t('conversationsClearAll') || '清除所有筛选',
+                },
+                '×',
+            );
+
+            clearBtn.addEventListener('click', () => {
+                if (clearBtn.classList.contains('disabled')) return;
+                searchInput.value = '';
+                if (this.filterTagIds) this.filterTagIds.clear();
+                this.filterPinned = false;
+                tagFilterBtn.classList.remove('active');
+                pinFilterBtn.classList.remove('active');
+                this.handleSearch('');
+                updateClearBtn();
+            });
+            searchWrapper.appendChild(clearBtn);
+
+            // Update clear button visibility helper
+            const updateClearBtn = () => {
+                const hasText = searchInput.value.length > 0;
+                const hasTags = this.filterTagIds && this.filterTagIds.size > 0;
+                const hasPinFilter = this.filterPinned;
+                const hasFilter = hasText || hasTags || hasPinFilter;
+
+                // Always visible but disabled if no filter
+                clearBtn.classList.toggle('disabled', !hasFilter);
+            };
+            // Check initial state
+            updateClearBtn();
+
             searchBar.appendChild(searchWrapper);
 
             // 搜索结果计数条
@@ -4555,6 +4604,20 @@
         }
 
         /**
+         * 获取侧边栏会话顺序
+         * @returns {Array<string>} 会话 ID 数组，按侧边栏 DOM 顺序排列
+         */
+        getSidebarConversationOrder() {
+            const config = this.siteAdapter.getConversationObserverConfig?.();
+            if (!config) return [];
+
+            const elements = DOMToolkit.query(config.selector, { all: true, shadow: config.shadow });
+            return Array.from(elements)
+                .map((el) => config.extractInfo?.(el)?.id)
+                .filter(Boolean);
+        }
+
+        /**
          * 渲染文件夹下的会话列表
          */
         renderConversationList(folderId, container) {
@@ -4579,8 +4642,24 @@
                 return;
             }
 
-            // 按更新时间排序（最新在前）
-            conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            // 获取侧边栏顺序
+            const sidebarOrder = this.getSidebarConversationOrder();
+
+            // 排序：置顶优先，其余按侧边栏顺序
+            conversations.sort((a, b) => {
+                // 置顶优先
+                if (a.pinned && !b.pinned) return -1;
+                if (!a.pinned && b.pinned) return 1;
+
+                // 按侧边栏顺序
+                const indexA = sidebarOrder.indexOf(a.id);
+                const indexB = sidebarOrder.indexOf(b.id);
+                // 不在侧边栏的放到最后
+                if (indexA === -1 && indexB === -1) return (b.updatedAt || 0) - (a.updatedAt || 0);
+                if (indexA === -1) return 1;
+                if (indexB === -1) return -1;
+                return indexA - indexB;
+            });
 
             conversations.forEach((conv) => {
                 const item = this.createConversationItem(conv);
@@ -4621,10 +4700,13 @@
                 title: conv.title,
                 style: 'user-select: none;',
             });
+            // 置顶标识
+            const displayTitle = conv.pinned ? `📌 ${conv.title || '无标题'}` : conv.title || '无标题';
             if (this.searchQuery && this.searchResult?.conversationMatches?.has(conv.id)) {
+                if (conv.pinned) title.appendChild(document.createTextNode('📌 '));
                 title.appendChild(this.highlightText(conv.title || '无标题', this.searchQuery));
             } else {
-                title.textContent = conv.title || '无标题';
+                title.textContent = displayTitle;
             }
             title.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -4717,6 +4799,16 @@
             });
             menu.appendChild(renameBtn);
 
+            // 置顶/取消置顶
+            const pinText = conv.pinned ? this.t('conversationsUnpin') || '取消置顶' : this.t('conversationsPin') || '📌 置顶';
+            const pinBtn = createElement('button', {}, pinText);
+            pinBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu.remove();
+                this.toggleConversationPin(conv);
+            });
+            menu.appendChild(pinBtn);
+
             // 设置标签
             const tagBtn = createElement('button', {}, this.t('conversationsSetTags') || '设置标签');
             tagBtn.addEventListener('click', (e) => {
@@ -4760,6 +4852,25 @@
                 }
             };
             setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        }
+
+        /**
+         * 切换会话置顶状态
+         */
+        toggleConversationPin(conv) {
+            const stored = this.data.conversations[conv.id];
+            if (!stored) return;
+
+            stored.pinned = !stored.pinned;
+            stored.updatedAt = Date.now();
+            this.saveData();
+
+            // 刷新 UI
+            this.createUI();
+
+            // 显示提示
+            const message = stored.pinned ? this.t('conversationsPinned') || '已置顶' : this.t('conversationsUnpinned') || '已取消置顶';
+            showToast(message);
         }
 
         /**
@@ -5462,8 +5573,8 @@
          */
         handleSearch(query) {
             this.searchQuery = query;
-            if (!query && (!this.filterTagIds || this.filterTagIds.size === 0)) {
-                // 清空搜索时重置
+            if (!query && (!this.filterTagIds || this.filterTagIds.size === 0) && !this.filterPinned) {
+                // 清空搜索时重置（无关键词、无标签筛选、无置顶筛选）
                 this.searchResult = null;
                 this.refreshAfterSearch();
                 return;
@@ -5503,11 +5614,12 @@
                     // 先按 CID 过滤
                     if (!this.matchesCid(conv, currentCid)) return;
 
-                    // 逻辑整合：关键词 AND 标签
+                    // 逻辑整合：关键词 AND 标签 AND 置顶
                     const matchQuery = !lowerQuery || (conv.title && conv.title.toLowerCase().includes(lowerQuery));
                     const matchTags = !this.filterTagIds || this.filterTagIds.size === 0 || (conv.tagIds && conv.tagIds.some((id) => this.filterTagIds.has(id)));
+                    const matchPinned = !this.filterPinned || conv.pinned;
 
-                    if (matchQuery && matchTags) {
+                    if (matchQuery && matchTags && matchPinned) {
                         conversationMatches.add(conv.id);
                         conversationFolderMap.set(conv.id, conv.folderId);
                     }
@@ -7208,13 +7320,29 @@
                     background: #f9fafb;
                 }
                 .conversations-search-wrapper {
+                    display: flex;
+                    align-items: center;
+                    gap: 0;
+                    position: relative; /* For dropdown menu */
+                }
+                /* Has Filter State: Remove Tag Btn Radius */
+                .conversations-search-wrapper.has-filter .conversations-tag-search-btn {
+                    border-radius: 0;
+                    border-right: none;
+                }
+                
+                .conversations-search-input-group {
+                    flex: 1;
                     position: relative;
+                    height: 36px;
+                    min-width: 0;
                 }
                 .conversations-search-input {
                     width: 100%;
-                    padding: 8px 32px 8px 12px;
+                    height: 100%;
+                    padding: 0 12px; /* Symmetric padding */
                     border: 1px solid #d1d5db;
-                    border-radius: 8px;
+                    border-radius: 8px 0 0 8px;
                     font-size: 14px;
                     box-sizing: border-box;
                     transition: all 0.2s;
@@ -7222,21 +7350,22 @@
                 .conversations-search-input:focus {
                     outline: none;
                     border-color: #6366f1;
+                    z-index: 1;
+                    position: relative;
                 }
-                .conversations-search-clear {
-                    position: absolute;
-                    right: 10px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    cursor: pointer;
-                    color: #9ca3af;
-                    font-size: 18px;
-                    line-height: 1;
-                    display: none;
-                    user-select: none;
+                
+                /* Pin Button */
+                .conversations-pin-filter-btn {
+                    cursor: pointer; width: 36px; height: 36px; color: #9ca3af; font-size: 14px;
+                    display: flex; align-items: center; justify-content: center;
+                    border: 1px solid #d1d5db; border-left: none;
+                    background: white; box-sizing: border-box; transition: all 0.2s;
                 }
-                .conversations-search-clear.visible { display: block; }
-                .conversations-search-clear:hover { color: #6b7280; }
+                .conversations-pin-filter-btn:hover { background: #f3f4f6; color: #374151; }
+                .conversations-pin-filter-btn.active { 
+                    color: #6366f1; background: #eef2ff; 
+                    box-shadow: inset 0 0 0 1px #818cf8;
+                }
 
                 .conversations-result-bar {
                     text-align: center;
@@ -7263,10 +7392,10 @@
 
                 /* 标签筛选按钮 */
                 .conversations-tag-search-btn {
-                    cursor: pointer; padding: 0 8px; color: #9ca3af; font-size: 14px;
+                    cursor: pointer; width: 36px; height: 36px; color: #9ca3af; font-size: 14px;
                     display: flex; align-items: center; justify-content: center;
-                    border-left: 1px solid #e5e7eb; transition: all 0.2s;
-                    position: absolute; right: 30px; top: 0; bottom: 0;
+                    border: 1px solid #d1d5db; border-left: none; border-radius: 0; /* Always 0 radius/square */
+                    background: white; box-sizing: border-box; transition: all 0.2s;
                 }
                 .conversations-tag-search-btn:hover { background: #f3f4f6; color: #374151; }
                 .conversations-tag-search-btn.active { 
@@ -7275,32 +7404,36 @@
                 }
                 .conversations-tag-search-btn.empty { opacity: 0.5; }
                 
-                .conversations-tag-clear-btn {
-                    display: none;
-                    margin-left: 4px;
-                    font-size: 16px;
-                    line-height: 1;
-                    color: #6366f1;
-                    cursor: pointer;
-                    opacity: 0.7;
-                    transition: opacity 0.2s;
+                /* Clear Button - Restyled at far right */
+                .conversations-search-clear {
+                    cursor: pointer; width: 36px; height: 36px; color: #9ca3af; font-size: 18px;
+                    display: flex; align-items: center; justify-content: center;
+                    border: 1px solid #d1d5db; border-left: none; border-radius: 0 8px 8px 0;
+                    background: white; box-sizing: border-box; transition: all 0.2s;
+                    user-select: none;
                 }
-                .conversations-tag-search-btn.active .conversations-tag-clear-btn {
-                    display: block;
-                }
-                .conversations-tag-clear-btn:hover {
-                    opacity: 1;
-                    font-weight: bold;
+                .conversations-search-clear:hover { background: #fef2f2; color: #ef4444; }
+                .conversations-search-clear.disabled { 
+                    opacity: 0.3; cursor: default; background: #f9fafb; pointer-events: none;
                 }
 
-                /* 标签筛选菜单 - Refined */
+                /* Removed old inner clear button styles */
+
+                /* 标签筛选菜单 */
                 .conversations-tag-filter-menu {
-                    background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000003; 
-                    width: 220px; max-height: 350px;
-                    position: absolute; top: 100%; right: 0; margin-top: 4px;
-                    display: flex; flex-direction: column;
-                    overflow: hidden; /* Important for sticky footer effect */
+                    position: absolute;
+                    top: calc(100% + 4px);
+                    right: 0;
+                    width: 200px;
+                    background: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                    z-index: 1000;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                    animation: fadeIn 0.2s;
                 }
                 .conversations-tag-filter-list {
                     overflow-y: auto; flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 2px;
