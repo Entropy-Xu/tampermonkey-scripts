@@ -4638,11 +4638,16 @@
                 // 尝试在侧边栏中查找并点击（支持 Shadow DOM 穿透）
                 // 方法1: 通过 jslog 属性查找（Gemini 标准版）
                 let sidebarItem = DOMToolkit.query(`.conversation[jslog*="${conv.id}"]`, { shadow: true });
-                // 方法2: 通过菜单按钮 ID 查找（Gemini Business）
+                // 方法2: 遍历所有会话元素，通过菜单按钮 ID 匹配（Gemini Business）
+                // 注意：closest() 在 Shadow DOM 中可能失效，所以需要遍历
                 if (!sidebarItem) {
-                    const menuBtn = DOMToolkit.query(`#menu-${conv.id}`, { shadow: true });
-                    if (menuBtn) {
-                        sidebarItem = menuBtn.closest('.conversation');
+                    const conversations = DOMToolkit.query('.conversation', { all: true, shadow: true });
+                    for (const convEl of conversations) {
+                        const menuBtn = convEl.querySelector(`#menu-${conv.id}`) || convEl.querySelector(`.conversation-action-menu-button[id="menu-${conv.id}"]`);
+                        if (menuBtn) {
+                            sidebarItem = convEl;
+                            break;
+                        }
                     }
                 }
                 if (sidebarItem) {
