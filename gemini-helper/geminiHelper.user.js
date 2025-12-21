@@ -7581,7 +7581,7 @@
                 /* 快捷跳转按钮组（面板内） */
                 .scroll-nav-container {
                     display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--gh-border, #e5e7eb);
-                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    background: var(--gh-bg-secondary);
                     border-radius: 0 0 12px 12px; justify-content: center;
                 }
                 .scroll-nav-btn {
@@ -7907,7 +7907,7 @@
                 .conversations-list {
                     width: 100%; /* 占满父容器宽度 */
                     padding: 8px 12px;
-                    background: #f8fafc;
+                    background: var(--gh-bg-secondary);
                     border: 2px solid var(--gh-border-active);
                     border-top: none;
                     border-radius: 0 0 8px 8px;
