@@ -4509,14 +4509,13 @@
          * @param {number} index 文件夹在数组中的索引
          */
         createFolderItem(folder, index) {
-            // 为非默认文件夹生成柔和的背景色（较淡）
-            const bgColors = ['#fef9e7', '#fdf2f8', '#eff6ff', '#ecfdf5', '#faf5ff', '#fefce8', '#ecfeff', '#fdf4ff'];
-            const bgColor = folder.isDefault ? '#f0f9ff' : bgColors[index % bgColors.length];
+            // 使用 CSS 变量以支持暗色模式
+            const bgVar = folder.isDefault ? 'var(--gh-folder-bg-default)' : `var(--gh-folder-bg-${index % 8})`;
 
             const item = createElement('div', {
                 className: 'conversations-folder-item' + (folder.isDefault ? ' default' : ''),
                 'data-folder-id': folder.id,
-                style: `background: ${bgColor};`,
+                style: `background: ${bgVar};`,
             });
 
             // 文件夹信息（图标 + 名称）
@@ -7398,6 +7397,17 @@
                     --gh-folder-bg-default: #e0f2fe;
                     --gh-folder-bg-expanded: #c7d2fe;
                     --gh-border-active: #6366f1;
+                    --gh-tag-active-bg: ${colors.primary};
+                    
+                    /* Folder Preset Colors */
+                    --gh-folder-bg-0: #fef9e7;
+                    --gh-folder-bg-1: #fdf2f8;
+                    --gh-folder-bg-2: #eff6ff;
+                    --gh-folder-bg-3: #ecfdf5;
+                    --gh-folder-bg-4: #faf5ff;
+                    --gh-folder-bg-5: #fefce8;
+                    --gh-folder-bg-6: #ecfeff;
+                    --gh-folder-bg-7: #fdf4ff;
                 }
 
                 body[data-gh-mode="dark"] {
@@ -7417,6 +7427,17 @@
                     --gh-folder-bg-default: rgba(66, 133, 244, 0.15);
                     --gh-folder-bg-expanded: rgba(66, 133, 244, 0.3);
                     --gh-border-active: #818cf8;
+                    --gh-tag-active-bg: rgba(66, 133, 244, 0.6);
+
+                    /* Folder Preset Colors (Dark Mode Translucent) */
+                    --gh-folder-bg-0: rgba(253, 224, 71, 0.15);
+                    --gh-folder-bg-1: rgba(244, 114, 182, 0.15);
+                    --gh-folder-bg-2: rgba(96, 165, 250, 0.15);
+                    --gh-folder-bg-3: rgba(52, 211, 153, 0.15);
+                    --gh-folder-bg-4: rgba(167, 139, 250, 0.15);
+                    --gh-folder-bg-5: rgba(253, 224, 71, 0.1);
+                    --gh-folder-bg-6: rgba(34, 211, 238, 0.15);
+                    --gh-folder-bg-7: rgba(232, 121, 249, 0.15);
                 }
 
                 /* 主面板样式 */
@@ -7472,7 +7493,7 @@
                 }
                 .category-tag:hover { background: var(--gh-border, #e5e7eb); }
                 .category-tag.active {
-                    background: ${colors.primary}; color: white; border-color: ${colors.primary};
+                    background: var(--gh-tag-active-bg); color: white; border-color: var(--gh-tag-active-bg);
                 }
                 .prompt-list { flex: 1; overflow-y: auto; padding: 8px; }
                 .prompt-item {
@@ -7502,8 +7523,8 @@
                 .prompt-action-btn:hover { background: var(--gh-hover, #f3f4f6); transform: scale(1.1); }
                 .prompt-item.dragging { opacity: 0.5; }
                 .add-prompt-btn {
-                    margin: 12px; padding: 10px; background: ${gradient};
-                    color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+                    margin: 12px; padding: 10px; background: var(--gh-header-bg);
+                    color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
                     transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
                 }
                 .add-prompt-btn:hover { transform: translateY(-2px); }
@@ -7529,12 +7550,12 @@
                 .prompt-form-input:focus, .prompt-form-textarea:focus { outline: none; border-color: ${colors.primary}; }
                 .prompt-modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
                 .prompt-modal-btn { padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; }
-                .prompt-modal-btn.primary { background: ${gradient}; color: white; }
+                .prompt-modal-btn.primary { background: var(--gh-header-bg); color: white; border: 1px solid rgba(255,255,255,0.2); }
                 .prompt-modal-btn.secondary { background: var(--gh-hover, #f3f4f6); color: #4b5563; }
                 /* 选中的提示词显示栏 */
                 .selected-prompt-bar {
                     position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
-                    background: ${gradient};
+                    background: var(--gh-header-bg);
                     color: white; padding: 8px 16px; border-radius: 20px; font-size: 13px; display: none;
                     align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(66,133,244,0.3);
                     z-index: 999998; animation: slideInUp 0.3s;
@@ -7548,7 +7569,7 @@
                 }
                 .quick-prompt-btn {
                     width: 44px; height: 44px;
-                    background: ${gradient};
+                    background: var(--gh-header-bg);
                     border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white;
                     font-size: 18px; cursor: pointer; box-shadow: 0 4px 12px rgba(66,133,244,0.3);
                     border: none; transition: transform 0.3s;
@@ -7565,7 +7586,7 @@
                 .outline-hidden { display: none !important; }
                 .gemini-toast {
                     position: fixed !important; top: 32px !important; left: 50% !important; transform: translateX(-50%) !important;
-                    background: ${gradient}; /* 品牌渐变色 */
+                    background: var(--gh-header-bg); /* 品牌渐变色 -> 动态主题色 */
                     color: white; /* 渐变色背景通常较深，配白字 */
                     padding: 10px 24px; border-radius: 9999px; font-size: 14px; font-weight: 500;
                     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
@@ -7587,7 +7608,7 @@
                 .scroll-nav-btn {
                     flex: 1; max-width: 120px; height: 32px; border-radius: 8px; border: none; cursor: pointer;
                     display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; gap: 4px;
-                    background: ${gradient};
+                    background: var(--gh-header-bg);
                     box-shadow: 0 2px 6px rgba(0,0,0,0.15); transition: transform 0.2s, box-shadow 0.2s;
                 }
                 .scroll-nav-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
@@ -8071,7 +8092,7 @@
                 }
                 .conversations-dialog-btn.cancel:hover { background: var(--gh-hover, #f3f4f6); }
                 .conversations-dialog-btn.confirm {
-                    border: none; background: ${gradient}; color: white;
+                    border: 1px solid rgba(255,255,255,0.2); background: var(--gh-header-bg); color: white;
                 }
                 .conversations-dialog-btn.confirm:hover { opacity: 0.9; }
 
