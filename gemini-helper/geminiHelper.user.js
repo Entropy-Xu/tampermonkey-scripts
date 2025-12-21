@@ -5578,8 +5578,12 @@
             // 2. 预设列表区域
             const listContainer = createElement('div', {
                 className: 'conversations-emoji-list',
-                style: 'display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; max-height: 120px; overflow-y: auto; padding: 2px;',
+                style: 'display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; max-height: 120px; overflow-y: auto; padding: 2px; scrollbar-width: none; -ms-overflow-style: none;',
             });
+            // Hide scrollbar style
+            const hideScrollStyle = document.createElement('style');
+            hideScrollStyle.textContent = `.conversations-emoji-list::-webkit-scrollbar { display: none; }`;
+            listContainer.appendChild(hideScrollStyle);
 
             // 扩充的预设 Emoji 库 (64个)
             const presetEmojis = [
