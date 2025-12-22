@@ -51,6 +51,7 @@
         DEFAULT_PANEL_STATE: 'gemini_default_panel_state',
         AUTO_HIDE_PANEL: 'gemini_default_auto_hide',
         THEME_MODE: 'gemini_theme_mode', // 'light' | 'dark' | null
+        COLLAPSED_BUTTONS_ORDER: 'gemini_collapsed_buttons_order',
     };
 
     // 默认 Tab 顺序（settings 已移到 header 按钮，不参与排序）
@@ -122,6 +123,22 @@
         conversations: { id: 'conversations', labelKey: 'tabConversations', icon: '💬' },
         settings: { id: 'settings', labelKey: 'tabSettings', icon: '⚙️' },
     };
+
+    // 折叠面板按钮定义
+    const COLLAPSED_BUTTON_DEFS = {
+        scrollTop: { icon: '⬆', labelKey: 'scrollTop', canToggle: false },
+        panel: { icon: '✨', labelKey: 'panelTitle', canToggle: false },
+        anchor: { icon: '⚓', labelKey: 'showCollapsedAnchorLabel', canToggle: true },
+        theme: { icon: '☀', labelKey: 'showCollapsedThemeLabel', canToggle: true },
+        scrollBottom: { icon: '⬇', labelKey: 'scrollBottom', canToggle: false },
+    };
+    const DEFAULT_COLLAPSED_BUTTONS_ORDER = [
+        { id: 'scrollTop', enabled: true },
+        { id: 'panel', enabled: true },
+        { id: 'anchor', enabled: true },
+        { id: 'theme', enabled: true },
+        { id: 'scrollBottom', enabled: true },
+    ];
 
     const I18N = {
         'zh-CN': {
@@ -281,10 +298,11 @@
             pageDisplaySettings: '页面显示',
             // 其他设置
             otherSettingsTitle: '其他设置',
-            showCollapsedAnchorLabel: '折叠面板显示锚点',
+            showCollapsedAnchorLabel: '锚点',
             showCollapsedAnchorDesc: '当面板收起时，在侧边浮动条中显示锚点按钮',
-            showCollapsedThemeLabel: '折叠面板显示主题切换',
+            showCollapsedThemeLabel: '主题',
             showCollapsedThemeDesc: '当面板收起时，在侧边浮动条中显示主题切换按钮',
+            collapsedButtonsOrderDesc: '调整折叠面板按钮的显示顺序',
             preventAutoScrollLabel: '防止自动滚动',
             preventAutoScrollDesc: '当 AI 生成长内容时，阻止页面自动滚动到底部，方便阅读上文',
             // 界面排版开关
@@ -513,10 +531,11 @@
             pageDisplaySettings: '頁面顯示',
             // 其他設置
             otherSettingsTitle: '其他設置',
-            showCollapsedAnchorLabel: '折疊面板顯示錨點',
+            showCollapsedAnchorLabel: '錨點',
             showCollapsedAnchorDesc: '當面板收起時，在側邊浮動條中顯示錨點按鈕',
-            showCollapsedThemeLabel: '折疊面板顯示主題切換',
+            showCollapsedThemeLabel: '主題',
             showCollapsedThemeDesc: '當面板收起時，在側邊浮動條中顯示主題切換按鈕',
+            collapsedButtonsOrderDesc: '調整折疊面板按鈕的顯示順序',
             preventAutoScrollLabel: '防止自動滾動',
             preventAutoScrollDesc: '當 AI 生成長內容時，阻止頁面自動滾動到底部，方便閱讀上文',
             // 介面排版開關
@@ -738,10 +757,11 @@
             pageDisplaySettings: 'Page Display',
             // Other Settings
             otherSettingsTitle: 'Other Settings',
-            showCollapsedAnchorLabel: 'Show anchor when collapsed',
+            showCollapsedAnchorLabel: 'Anchor',
             showCollapsedAnchorDesc: 'Display anchor button in sidebar when panel is collapsed',
-            showCollapsedThemeLabel: 'Show theme toggle when collapsed',
+            showCollapsedThemeLabel: 'Theme',
             showCollapsedThemeDesc: 'Display theme toggle button in sidebar when panel is collapsed',
+            collapsedButtonsOrderDesc: 'Adjust the display order of collapsed panel buttons',
             preventAutoScrollLabel: 'Prevent auto-scroll',
             preventAutoScrollDesc: 'Stop page from auto-scrolling to bottom during AI generation',
             // Interface Toggle
@@ -7262,8 +7282,7 @@
                 prompts: promptsSettings,
                 tabOrder: tabOrder,
                 preventAutoScroll: GM_getValue('gemini_prevent_auto_scroll', false),
-                showCollapsedAnchor: GM_getValue('gemini_show_collapsed_anchor', true),
-                showCollapsedTheme: GM_getValue('gemini_show_collapsed_theme', true),
+                collapsedButtonsOrder: GM_getValue(SETTING_KEYS.COLLAPSED_BUTTONS_ORDER, DEFAULT_COLLAPSED_BUTTONS_ORDER),
                 tabSettings: { ...DEFAULT_TAB_SETTINGS, ...GM_getValue(SETTING_KEYS.TAB_SETTINGS, {}) },
                 readingHistory: { ...DEFAULT_READING_HISTORY_SETTINGS, ...GM_getValue(SETTING_KEYS.READING_HISTORY, {}) },
                 conversations: { enabled: true },
@@ -7317,6 +7336,8 @@
             } else {
                 GM_setValue('gemini_theme_mode_default', settings.themeMode);
             }
+            // 保存折叠面板按钮顺序
+            GM_setValue(SETTING_KEYS.COLLAPSED_BUTTONS_ORDER, settings.collapsedButtonsOrder);
         }
     }
 
@@ -8912,59 +8933,67 @@
                 className: 'quick-btn-group' + (this.isCollapsed ? '' : ' hidden'),
                 id: 'quick-btn-group',
             });
-            const quickBtn = createElement('button', { className: 'quick-prompt-btn', title: this.t('panelTitle') }, '✨');
 
-            // 快速主题切换按钮
-            const quickThemeBtn = createElement('button', {
-                className: 'quick-prompt-btn',
-                id: 'quick-theme-btn',
-                title: this.t('toggleTheme'),
-                style: this.settings.showCollapsedTheme ? 'display: flex;' : 'display: none;',
+            // 按钮工厂函数
+            const createQuickButton = (id, def, enabled) => {
+                const btn = createElement(
+                    'button',
+                    {
+                        className: 'quick-prompt-btn',
+                        id: id === 'anchor' ? 'quick-anchor-btn' : id === 'theme' ? 'quick-theme-btn' : undefined,
+                        title: this.t(def.labelKey),
+                        style: enabled ? 'display: flex;' : 'display: none;',
+                    },
+                    def.icon,
+                );
+
+                // 锚点按钮初始状态置灰
+                if (id === 'anchor') {
+                    btn.style.opacity = '0.4';
+                    btn.style.cursor = 'default';
+                    btn.title = '暂无锚点';
+                }
+
+                return btn;
+            };
+
+            // 事件处理器
+            const buttonActions = {
+                scrollTop: () => this.scrollToTop(),
+                scrollBottom: () => this.scrollToBottom(),
+                panel: () => this.togglePanel(),
+                anchor: () => this.handleAnchorClick(),
+                theme: (e) => {
+                    e.stopPropagation();
+                    this.toggleTheme();
+                },
+            };
+
+            // 保存按钮引用以便后续绑定事件
+            const quickButtons = {};
+
+            // 根据配置动态创建按钮
+            const btnOrder = this.settings.collapsedButtonsOrder || DEFAULT_COLLAPSED_BUTTONS_ORDER;
+            btnOrder.forEach((btnConfig) => {
+                const def = COLLAPSED_BUTTON_DEFS[btnConfig.id];
+                if (!def) return;
+
+                // 可切换按钮检查 enabled 状态
+                const isVisible = def.canToggle ? btnConfig.enabled : true;
+                const btn = createQuickButton(btnConfig.id, def, isVisible);
+                quickButtons[btnConfig.id] = btn;
+                quickBtnGroup.appendChild(btn);
             });
 
-            const quickScrollTop = createElement(
-                'button',
-                {
-                    className: 'quick-prompt-btn',
-                    title: this.t('scrollTop'),
-                },
-                '⬆',
-            );
-            const quickAnchor = createElement(
-                'button',
-                {
-                    className: 'quick-prompt-btn',
-                    id: 'quick-anchor-btn',
-                    title: '暂无锚点',
-                    style: (this.settings.showCollapsedAnchor ? 'display: flex;' : 'display: none;') + ' opacity: 0.4; cursor: default;',
-                },
-                '⚓',
-            );
-            const quickScrollBottom = createElement(
-                'button',
-                {
-                    className: 'quick-prompt-btn',
-                    title: this.t('scrollBottom'),
-                },
-                '⬇',
-            );
-
-            quickBtn.addEventListener('click', () => {
-                this.togglePanel();
+            // 绑定事件
+            Object.keys(quickButtons).forEach((id) => {
+                const btn = quickButtons[id];
+                const action = buttonActions[id];
+                if (action) {
+                    btn.addEventListener('click', action);
+                }
             });
-            quickThemeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleTheme();
-            });
-            quickScrollTop.addEventListener('click', () => this.scrollToTop());
-            quickAnchor.addEventListener('click', () => this.handleAnchorClick());
-            quickScrollBottom.addEventListener('click', () => this.scrollToBottom());
 
-            quickBtnGroup.appendChild(quickScrollTop);
-            quickBtnGroup.appendChild(quickAnchor);
-            quickBtnGroup.appendChild(quickThemeBtn);
-            quickBtnGroup.appendChild(quickBtn);
-            quickBtnGroup.appendChild(quickScrollBottom);
             document.body.appendChild(quickBtnGroup);
 
             // 快捷跳转按钮组 - 放在面板底部
@@ -9728,60 +9757,119 @@
             autoHidePanelItem.appendChild(autoHidePanelToggle);
             panelSettingsContainer.appendChild(autoHidePanelItem);
 
-            // 5.5.3 折叠面板显示锚点
-            const showAnchorItem = createElement('div', { className: 'setting-item' });
-            const showAnchorInfo = createElement('div', { className: 'setting-item-info' });
-            showAnchorInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('showCollapsedAnchorLabel')));
-            showAnchorInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('showCollapsedAnchorDesc')));
+            // 5.5.3 折叠面板按钮排序
+            const collapsedBtnDesc = createElement(
+                'div',
+                {
+                    className: 'setting-item-desc',
+                    style: 'padding: 0 12px 8px 12px; margin-bottom: 4px;',
+                },
+                this.t('collapsedButtonsOrderDesc') || '调整折叠面板按钮的显示顺序',
+            );
+            panelSettingsContainer.appendChild(collapsedBtnDesc);
 
-            const showAnchorToggle = createElement('div', {
-                className: 'setting-toggle' + (this.settings.showCollapsedAnchor ? ' active' : ''),
-                id: 'toggle-show-collapsed-anchor',
-            });
-            showAnchorToggle.addEventListener('click', () => {
-                this.settings.showCollapsedAnchor = !this.settings.showCollapsedAnchor;
-                showAnchorToggle.classList.toggle('active', this.settings.showCollapsedAnchor);
-                this.saveSettings();
+            const currentBtnOrder = this.settings.collapsedButtonsOrder || DEFAULT_COLLAPSED_BUTTONS_ORDER;
 
-                // 实时更新UI
-                GM_setValue('gemini_show_collapsed_anchor', this.settings.showCollapsedAnchor);
-                const quickAnchor = document.getElementById('quick-anchor-btn');
-                if (quickAnchor) {
-                    quickAnchor.style.display = this.settings.showCollapsedAnchor ? 'flex' : 'none';
+            currentBtnOrder.forEach((btnConfig, index) => {
+                const def = COLLAPSED_BUTTON_DEFS[btnConfig.id];
+                if (!def) return;
+
+                const item = createElement('div', { className: 'setting-item' });
+                const info = createElement('div', { className: 'setting-item-info' });
+                const label = createElement('div', { className: 'setting-item-label', style: 'display: flex; align-items: center;' });
+                const iconSpan = createElement('span', { style: 'display: inline-block; width: 24px; text-align: center; margin-right: 4px;' }, def.icon);
+                const textSpan = createElement('span', {}, this.t(def.labelKey));
+                label.appendChild(iconSpan);
+                label.appendChild(textSpan);
+                info.appendChild(label);
+
+                const controls = createElement('div', { className: 'setting-controls' });
+
+                // 可切换的按钮（anchor/theme）添加开关
+                if (def.canToggle) {
+                    const toggle = createElement('div', {
+                        className: 'setting-toggle' + (btnConfig.enabled ? ' active' : ''),
+                        style: 'transform: scale(0.8); margin-right: 12px;',
+                    });
+                    toggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        btnConfig.enabled = !btnConfig.enabled;
+                        toggle.classList.toggle('active', btnConfig.enabled);
+                        this.saveSettings();
+                        this.createUI();
+                        this.bindEvents();
+                        this.switchTab('settings');
+                        showToast(btnConfig.enabled ? this.t('settingOn') : this.t('settingOff'));
+                    });
+                    controls.appendChild(toggle);
                 }
 
-                showToast(this.settings.showCollapsedAnchor ? this.t('settingOn') : this.t('settingOff'));
+                // 上下移动按钮
+                const upBtn = createElement('button', {
+                    className: 'prompt-panel-btn',
+                    style: 'background: var(--gh-hover, #f3f4f6); color: #4b5563; width: 32px; height: 32px; font-size: 16px; margin-right: 4px; border: 1px solid var(--gh-border, #e5e7eb);',
+                    title: this.t('moveUp'),
+                });
+                upBtn.textContent = '⬆';
+                upBtn.disabled = index === 0;
+
+                const downBtn = createElement('button', {
+                    className: 'prompt-panel-btn',
+                    style: 'background: var(--gh-hover, #f3f4f6); color: #4b5563; width: 32px; height: 32px; font-size: 16px; border: 1px solid var(--gh-border, #e5e7eb);',
+                    title: this.t('moveDown'),
+                });
+                downBtn.textContent = '⬇';
+                downBtn.disabled = index === currentBtnOrder.length - 1;
+
+                [upBtn, downBtn].forEach((btn) => {
+                    if (btn.disabled) {
+                        btn.style.opacity = '0.4';
+                        btn.style.cursor = 'not-allowed';
+                    } else {
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                        btn.onmouseover = () => {
+                            btn.style.background = 'var(--gh-border, #e5e7eb)';
+                            btn.style.color = '#111827';
+                        };
+                        btn.onmouseout = () => {
+                            btn.style.background = 'var(--gh-hover, #f3f4f6)';
+                            btn.style.color = '#4b5563';
+                        };
+                    }
+                });
+
+                upBtn.addEventListener('click', () => {
+                    if (index > 0) {
+                        const newOrder = [...currentBtnOrder];
+                        [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+                        this.settings.collapsedButtonsOrder = newOrder;
+                        this.saveSettings();
+                        this.createUI();
+                        this.bindEvents();
+                        this.switchTab('settings');
+                    }
+                });
+
+                downBtn.addEventListener('click', () => {
+                    if (index < currentBtnOrder.length - 1) {
+                        const newOrder = [...currentBtnOrder];
+                        [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+                        this.settings.collapsedButtonsOrder = newOrder;
+                        this.saveSettings();
+                        this.createUI();
+                        this.bindEvents();
+                        this.switchTab('settings');
+                    }
+                });
+
+                controls.appendChild(upBtn);
+                controls.appendChild(downBtn);
+
+                item.appendChild(info);
+                item.appendChild(controls);
+                panelSettingsContainer.appendChild(item);
             });
-            showAnchorItem.appendChild(showAnchorInfo);
-            showAnchorItem.appendChild(showAnchorToggle);
-            panelSettingsContainer.appendChild(showAnchorItem);
-
-            // 折叠面板显示主题切换
-            const collapsedThemeItem = createElement('div', { className: 'setting-item' });
-            const collapsedThemeInfo = createElement('div', { className: 'setting-item-info' });
-            collapsedThemeInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('showCollapsedThemeLabel')));
-            collapsedThemeInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('showCollapsedThemeDesc')));
-
-            const collapsedThemeToggle = createElement('div', {
-                className: 'setting-toggle' + (this.settings.showCollapsedTheme ? ' active' : ''),
-                id: 'toggle-collapsed-theme',
-            });
-            collapsedThemeToggle.addEventListener('click', () => {
-                this.settings.showCollapsedTheme = !this.settings.showCollapsedTheme;
-                collapsedThemeToggle.classList.toggle('active', this.settings.showCollapsedTheme);
-                this.saveSettings();
-
-                // 实时更新UI
-                const quickThemeBtn = document.getElementById('quick-theme-btn');
-                if (quickThemeBtn) {
-                    quickThemeBtn.style.display = this.settings.showCollapsedTheme ? 'flex' : 'none';
-                }
-
-                showToast(this.settings.showCollapsedTheme ? this.t('settingOn') : this.t('settingOff'));
-            });
-            collapsedThemeItem.appendChild(collapsedThemeInfo);
-            collapsedThemeItem.appendChild(collapsedThemeToggle);
-            panelSettingsContainer.appendChild(collapsedThemeItem);
 
             const panelSettingsSection = this.createCollapsibleSection(this.t('panelSettingsTitle'), panelSettingsContainer, { defaultExpanded: false });
 
@@ -10091,19 +10179,19 @@
             // 1. 通用设置（语言）- 已在上方添加
             // 2. 面板设置 (New)
             content.appendChild(panelSettingsSection);
-            // 3. 标签页设置
-            if (tabSettingsSection) content.appendChild(tabSettingsSection);
-            // 3. 阅读导航
-            content.appendChild(anchorSection);
-            // 4. 大纲设置
-            content.appendChild(outlineSettingsSection);
-            // 5. 页面显示
-            content.appendChild(widthSection);
-            // 6. 模型锁定
-            if (lockSection) content.appendChild(lockSection);
-            // 7. 界面排版
+            // 3. 界面排版
             content.appendChild(layoutSection);
-            // 8. 其他设置
+            // 4. 标签页设置
+            if (tabSettingsSection) content.appendChild(tabSettingsSection);
+            // 5. 阅读导航
+            content.appendChild(anchorSection);
+            // 6. 大纲设置
+            content.appendChild(outlineSettingsSection);
+            // 7. 页面显示
+            content.appendChild(widthSection);
+            // 8. 模型锁定
+            if (lockSection) content.appendChild(lockSection);
+            // 9. 其他设置
             content.appendChild(otherSettingsSection);
 
             container.appendChild(content);
