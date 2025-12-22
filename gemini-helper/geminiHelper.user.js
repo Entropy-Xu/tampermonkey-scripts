@@ -7764,6 +7764,32 @@
                     from { transform: translate(-50%, -20px) scale(0.95); opacity: 0; }
                     to { transform: translate(-50%, 0) scale(1); opacity: 1; }
                 }
+                /* Theme Toggle Animation (View Transitions API) */
+                ::view-transition-old(root),
+                ::view-transition-new(root) {
+                    animation: none;
+                    mix-blend-mode: normal;
+                }
+                ::view-transition-old(root) {
+                    z-index: 1;
+                }
+                ::view-transition-new(root) {
+                    z-index: 9999;
+                }
+                .dark-theme::view-transition-old(root) {
+                    z-index: 9999;
+                }
+                .dark-theme::view-transition-new(root) {
+                    z-index: 1;
+                }
+                @keyframes themeReveal {
+                    from { clip-path: circle(0% at var(--theme-x, 95%) var(--theme-y, 5%)); }
+                    to { clip-path: circle(150% at var(--theme-x, 95%) var(--theme-y, 5%)); }
+                }
+                @keyframes themeShrink {
+                    from { clip-path: circle(150% at var(--theme-x, 95%) var(--theme-y, 5%)); }
+                    to { clip-path: circle(0% at var(--theme-x, 95%) var(--theme-y, 5%)); }
+                }
                 /* 快捷跳转按钮组（面板内） */
                 .scroll-nav-container {
                     display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--gh-border, #e5e7eb);
@@ -8606,25 +8632,72 @@
             }
         }
 
-        // 切换主题 (User Action)
-        toggleTheme() {
+        // 切换主题 (User Action) - 带圆形扩散动画
+        toggleTheme(event) {
             const bodyClass = document.body.className;
             // Also check style for robustness
             const isDark = /\bdark-theme\b/i.test(bodyClass) || document.body.style.colorScheme === 'dark';
             const nextMode = isDark ? 'light' : 'dark';
 
-            // 优先使用适配器的原生切换逻辑 (针对 Gemini Business)
-            if (typeof this.siteAdapter.toggleTheme === 'function') {
-                this.siteAdapter.toggleTheme(nextMode).then((success) => {
-                    if (!success) {
-                        // Fallback or Toast?
-                        showToast('自动切换主题失败，请尝试在网页设置中手动切换');
-                    }
-                });
-                return;
+            // 计算动画起点坐标（从点击位置或默认右上角）
+            let x = 95,
+                y = 5;
+            if (event && event.clientX !== undefined) {
+                x = (event.clientX / window.innerWidth) * 100;
+                y = (event.clientY / window.innerHeight) * 100;
+            } else {
+                // 尝试从主题按钮位置获取
+                const themeBtn = document.getElementById('theme-toggle-btn') || document.getElementById('quick-theme-btn');
+                if (themeBtn) {
+                    const rect = themeBtn.getBoundingClientRect();
+                    x = ((rect.left + rect.width / 2) / window.innerWidth) * 100;
+                    y = ((rect.top + rect.height / 2) / window.innerHeight) * 100;
+                }
             }
 
-            this.applyTheme(nextMode);
+            // 设置 CSS 变量
+            document.documentElement.style.setProperty('--theme-x', `${x}%`);
+            document.documentElement.style.setProperty('--theme-y', `${y}%`);
+
+            // 执行主题切换的核心逻辑
+            const doToggle = () => {
+                // 优先使用适配器的原生切换逻辑 (针对 Gemini Business)
+                if (typeof this.siteAdapter.toggleTheme === 'function') {
+                    return this.siteAdapter.toggleTheme(nextMode).then((success) => {
+                        if (!success) {
+                            showToast('自动切换主题失败，请尝试在网页设置中手动切换');
+                        }
+                    });
+                }
+                this.applyTheme(nextMode);
+            };
+
+            // 使用 View Transitions API（如果浏览器支持）
+            if (document.startViewTransition) {
+                const transition = document.startViewTransition(() => {
+                    doToggle();
+                });
+
+                // 应用自定义动画
+                transition.ready.then(() => {
+                    const animation = isDark ? 'themeReveal' : 'themeShrink';
+                    document.documentElement.animate(
+                        {
+                            clipPath: isDark
+                                ? ['circle(0% at var(--theme-x) var(--theme-y))', 'circle(150% at var(--theme-x) var(--theme-y))']
+                                : ['circle(150% at var(--theme-x) var(--theme-y))', 'circle(0% at var(--theme-x) var(--theme-y))'],
+                        },
+                        {
+                            duration: 800,
+                            easing: 'ease-in-out',
+                            pseudoElement: isDark ? '::view-transition-new(root)' : '::view-transition-old(root)',
+                        },
+                    );
+                });
+            } else {
+                // 降级：直接切换
+                doToggle();
+            }
         }
 
         createUI() {
