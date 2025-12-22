@@ -7265,10 +7265,9 @@
                 // 自动隐藏面板
                 autoHidePanel: GM_getValue(SETTING_KEYS.AUTO_HIDE_PANEL, false),
                 // 主题模式 (null=跟随系统/默认, 'light', 'dark')
-                themeMode: GM_getValue('gemini_theme_mode', null),
+                themeMode: GM_getValue(`gemini_theme_mode_${currentAdapter ? currentAdapter.getSiteId() : 'default'}`, null),
             };
         }
-
         /**
          * 保存设置
          * @param {Object} settings 当前设置对象
@@ -7305,6 +7304,12 @@
             }
             GM_setValue('gemini_default_panel_state', settings.defaultPanelState);
             GM_setValue('gemini_default_auto_hide', settings.autoHidePanel);
+            // 保存主题模式 (使用站点特有的 Key)
+            if (currentAdapter) {
+                GM_setValue(`gemini_theme_mode_${currentAdapter.getSiteId()}`, settings.themeMode);
+            } else {
+                GM_setValue('gemini_theme_mode_default', settings.themeMode);
+            }
         }
     }
 
@@ -8511,7 +8516,7 @@
                 if (currentSavedMode !== detectedMode) {
                     this.settings.themeMode = detectedMode;
                     this.saveSettings();
-                    GM_setValue('gemini_theme_mode', detectedMode);
+                    // GM_setValue handled in saveSettings with site-scoped key
                 }
 
                 const themeBtn = document.getElementById('theme-toggle-btn');
