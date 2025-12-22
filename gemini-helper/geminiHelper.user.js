@@ -81,9 +81,9 @@
         lastUsedFolderId: 'inbox',
     };
 
-    // 预设标签颜色 (29色 - 中国传统色精选 - 优化对比度)
+    // 预设标签颜色 (30色 - 中国传统色精选 - 优化对比度)
     const TAG_COLORS = [
-        '#ff461f', // 朱砂
+        '#ff461f', // 朱
         '#e35c64', // 桃夭
         '#db5a6b', // 海棠红
         '#f2481b', // 榴花红
@@ -112,7 +112,7 @@
         '#57c3c2', // 天水碧
         '#ce97a8', // 藕荷
         '#5d513c', // 墨灰
-        '#9b95c9', // 长春花 (新增第30色)
+        '#9b95c9', // 长春花
     ];
 
     // Tab 定义（用于渲染和显示）
@@ -2361,72 +2361,98 @@
         async toggleTheme(targetMode) {
             console.log(`[GeminiBusinessAdapter] Attempting to switch theme to: ${targetMode}`);
 
-            // 1. 找到并点击设置按钮
-            // 使用 DOMToolkit 穿透 Shadow DOM 查找
-            const settingsBtn = DOMToolkit.query('#settings-menu-anchor', { shadow: true });
+            // 1. 启动暴力隐身模式 (JS 每一帧强制隐藏)
+            // CSS 注入可能因优先级或 Shadow DOM 隔离失效，JS 强制修改内联样式是最稳妥的
+            let stopSuppression = false;
+            const suppressMenu = () => {
+                if (stopSuppression) return;
 
-            if (!settingsBtn) {
-                console.error('[GeminiBusinessAdapter] Settings button not found (#settings-menu-anchor)');
-                // 尝试备用选择器 (class based)
-                const fallbackBtn = DOMToolkit.query('.setting-btn', { shadow: true });
-                if (fallbackBtn) {
-                    console.log('[GeminiBusinessAdapter] Found settings button via fallback class');
-                    if (typeof fallbackBtn.click === 'function') fallbackBtn.click();
-                    else fallbackBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                } else {
-                    return false;
+                // 查找所有可能的菜单容器
+                try {
+                    const menus = DOMToolkit.query('.menu[popover], md-menu-surface, .mat-menu-panel, [role="menu"]', { all: true, shadow: true });
+                    menus.forEach((el) => {
+                        // 强制隐藏，不留余地
+                        if (el.style.opacity !== '0') {
+                            el.style.setProperty('opacity', '0', 'important');
+                            el.style.setProperty('visibility', 'hidden', 'important');
+                            el.style.setProperty('pointer-events', 'none', 'important');
+                        }
+                    });
+                } catch (e) {
+                    // Ignore errors during suppression
                 }
-            } else {
-                // Click settings button
-                if (typeof settingsBtn.click === 'function') {
-                    settingsBtn.click();
-                } else {
-                    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-                    settingsBtn.dispatchEvent(clickEvent);
-                }
-            }
 
-            // 2. 等待菜单弹出 (md-menu / md-primary-tab)
-            // 简单轮询等待
-            let attempts = 0;
-            const findAndClickOption = () => {
-                // User HTML: <md-primary-tab ...><md-icon>dark_mode</md-icon><div class="label">深色</div></md-primary-tab>
-                const targetIcon = targetMode === 'dark' ? 'dark_mode' : 'light_mode';
-
-                // Query all md-primary-tab in the document (the menu is likely top-level or hung on body, but might be in shadow)
-                // Use DOMToolkit to find ALL tabs
-                const tabs = DOMToolkit.query('md-primary-tab', { all: true, shadow: true });
-
-                for (const tab of tabs) {
-                    // Check icon content
-                    const icon = tab.querySelector('md-icon') || DOMToolkit.query('md-icon', { root: tab, shadow: true });
-                    if (icon && icon.textContent.trim() === targetIcon) {
-                        console.log(`[GeminiBusinessAdapter] Found target option: ${targetIcon}`);
-                        tab.click();
-                        return true;
-                    }
-                }
-                return false;
+                requestAnimationFrame(suppressMenu);
             };
+            suppressMenu();
 
-            return new Promise((resolve) => {
-                const interval = setInterval(() => {
-                    attempts++;
-                    if (findAndClickOption()) {
-                        clearInterval(interval);
-                        resolve(true);
-                        // Optional: Close menu if it doesn't close automatically?
-                        // Usually selecting an option closes it.
-                    } else if (attempts > 20) {
-                        // Timeout 2s
-                        clearInterval(interval);
-                        console.error('[GeminiBusinessAdapter] Target theme option not found');
-                        resolve(false);
-                        // Try clicking settings again to close if failed?
-                        settingsBtn.click();
+            // 全局也加一个保险
+            document.body.classList.add('gh-stealth-mode');
+
+            try {
+                // 2. 找到并点击设置按钮
+                const settingsBtn = DOMToolkit.query('#settings-menu-anchor', { shadow: true });
+
+                if (!settingsBtn) {
+                    console.error('[GeminiBusinessAdapter] Settings button not found (#settings-menu-anchor)');
+                    const fallbackBtn = DOMToolkit.query('.setting-btn', { shadow: true });
+                    if (fallbackBtn) {
+                        if (typeof fallbackBtn.click === 'function') fallbackBtn.click();
+                        else fallbackBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    } else {
+                        return false;
                     }
-                }, 100);
-            });
+                } else {
+                    if (typeof settingsBtn.click === 'function') {
+                        settingsBtn.click();
+                    } else {
+                        settingsBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    }
+                }
+
+                // 3. 等待菜单弹出并点击目标
+                let attempts = 0;
+                const findAndClickOption = () => {
+                    const targetIcon = targetMode === 'dark' ? 'dark_mode' : 'light_mode';
+
+                    // Query all md-primary-tab in the document
+                    const tabs = DOMToolkit.query('md-primary-tab', { all: true, shadow: true });
+
+                    for (const tab of tabs) {
+                        const icon = tab.querySelector('md-icon') || DOMToolkit.query('md-icon', { root: tab, shadow: true });
+                        if (icon && icon.textContent.trim() === targetIcon) {
+                            console.log(`[GeminiBusinessAdapter] Found target option: ${targetIcon}`);
+                            tab.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                return await new Promise((resolve) => {
+                    const interval = setInterval(() => {
+                        attempts++;
+                        if (findAndClickOption()) {
+                            clearInterval(interval);
+                            resolve(true);
+                        } else if (attempts > 20) {
+                            // Timeout 2s
+                            clearInterval(interval);
+                            console.error('[GeminiBusinessAdapter] Target theme option not found');
+                            resolve(false);
+                            // Try clicking settings again to close if failed
+                            if (settingsBtn && typeof settingsBtn.click === 'function') settingsBtn.click();
+                        }
+                    }, 100);
+                });
+            } finally {
+                // 停止暴力抑制
+                stopSuppression = true;
+                // 延迟移除隐身模式
+                setTimeout(() => {
+                    document.body.classList.remove('gh-stealth-mode');
+                }, 200);
+            }
         }
 
         supportsDOMThemeToggle() {
@@ -8350,6 +8376,15 @@
                 }
                 .outline-search-clear:hover { background: #9ca3af; }
                 .outline-search-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
+
+                /* 隐身模式：隐藏 Gemini Business 设置菜单 (防止切换主题时闪烁) */
+                body.gh-stealth-mode md-menu,
+                body.gh-stealth-mode md-menu-surface,
+                body.gh-stealth-mode .mat-menu-panel,
+                body.gh-stealth-mode [role="menu"] {
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                }
                 .outline-search-result { font-size: 12px; color: var(--gh-text-secondary, #6b7280); margin-left: 8px; white-space: nowrap; }
                 .outline-result-bar {
                     padding: 6px 12px; background: #eff6ff; color: #1d4ed8; font-size: 12px;
