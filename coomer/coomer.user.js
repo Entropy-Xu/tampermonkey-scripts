@@ -748,6 +748,26 @@
                     letter-spacing: 0.5px;
                     text-transform: uppercase;
                 }
+                .coomer-panel-header-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .coomer-panel-settings {
+                    background: transparent;
+                    border: none;
+                    color: var(--coomer-text-sec);
+                    font-size: 16px;
+                    cursor: pointer;
+                    padding: 8px;
+                    line-height: 1;
+                    border-radius: 8px;
+                    transition: all 0.2s;
+                }
+                .coomer-panel-settings:hover {
+                    color: var(--coomer-primary);
+                    background: rgba(255, 255, 255, 0.05);
+                }
                 .coomer-panel-close {
                     background: transparent;
                     border: none;
@@ -1414,12 +1434,14 @@
             panel.innerHTML = `
                 <div class="coomer-panel-header">
                     <span class="coomer-panel-title">👑 COOMER 臻选</span>
-                    <button class="coomer-panel-close">×</button>
+                    <div class="coomer-panel-header-actions">
+                        <button class="coomer-panel-settings" title="设置">⚙️</button>
+                        <button class="coomer-panel-close">×</button>
+                    </div>
                 </div>
                 <div class="coomer-tabs">
                     <button class="coomer-tab active" data-tab="artists">👩‍🎨 艺术家</button>
                     <button class="coomer-tab" data-tab="posts">🎬 作品</button>
-                    <button class="coomer-tab" data-tab="settings">⚙️ 设置</button>
                 </div>
                 <div class="coomer-panel-content"></div>
             `;
@@ -1430,6 +1452,14 @@
                 e.preventDefault();
                 e.stopPropagation();
                 this.close();
+            });
+
+            // 设置按钮事件
+            const settingsBtn = panel.querySelector('.coomer-panel-settings');
+            settingsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.switchTab('settings');
             });
 
             // 标签页切换事件
