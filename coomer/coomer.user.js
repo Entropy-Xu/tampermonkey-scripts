@@ -312,6 +312,7 @@
                 title: title || `Post ${urlInfo.postId}`,
                 artistId: urlInfo.userId,
                 artistName: artistInfo?.nickname || '',
+                platform: urlInfo.platform,
                 thumb,
                 mediaUrls,
                 type: hasVideo ? 'video' : 'image',
@@ -1910,11 +1911,12 @@
                 // 视频作品：显示播放按钮列表
                 const videoList = post.mediaUrls
                     .map((url, index) => {
-                        const fileName = url.split('/').pop() || `视频 ${index + 1}`;
+                        // 单个视频显示"点击播放"，多个视频显示"视频 1"、"视频 2"...
+                        const displayName = post.mediaUrls.length === 1 ? '点击播放' : `视频 ${index + 1} 点击播放`;
                         return `
                         <div class="coomer-video-item" data-url="${url}">
                             <span class="coomer-video-icon">▶️</span>
-                            <span class="coomer-video-name">${fileName}</span>
+                            <span class="coomer-video-name">${displayName}</span>
                         </div>
                     `;
                     })
@@ -1940,11 +1942,13 @@
                 </div>
                 ${previewContent}
                 <h3 style="margin: 12px 0 8px; font-size: 16px;">${post.title}</h3>
-                <p style="color: #888; font-size: 14px;">艺术家: ${post.artistName}</p>
+                <p style="color: #888; font-size: 14px;">艺术家: ${
+                    post.platform ? `<a href="#" id="artist-link" style="color: var(--coomer-primary); text-decoration: none; cursor: pointer;">${post.artistName}</a>` : post.artistName
+                }</p>
                 
                 <div class="coomer-btn-group">
                     <button class="coomer-btn coomer-btn-primary" id="open-btn">📖 打开页面</button>
-                    <button class="coomer-btn coomer-btn-secondary" id="copy-btn">📋 复制链接 (${post.mediaUrls ? post.mediaUrls.length : 0})</button>
+                    <button class="coomer-btn coomer-btn-secondary" id="copy-btn">📋 复制下载链接 (${post.mediaUrls ? post.mediaUrls.length : 0})</button>
                 </div>
                 <div class="coomer-btn-group">
                     <button class="coomer-btn coomer-btn-danger" id="delete-btn">🗑️ 删除</button>
@@ -1958,6 +1962,15 @@
             this.contentArea.querySelector('#open-btn').addEventListener('click', () => {
                 this.navigateTo(post.pageUrl);
             });
+
+            // 艺术家链接点击事件（仅在有 platform 数据时绑定）
+            if (post.platform) {
+                this.contentArea.querySelector('#artist-link').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const artistUrl = `https://coomer.st/${post.platform}/user/${post.artistId}`;
+                    this.navigateTo(artistUrl);
+                });
+            }
 
             this.contentArea.querySelector('#copy-btn').addEventListener('click', () => {
                 const links = post.mediaUrls.join('\n');
