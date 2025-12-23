@@ -708,6 +708,7 @@
                     box-shadow: var(--coomer-shadow);
                     border: 1px solid rgba(255, 255, 255, 0.05);
                     border-bottom: none;
+                    position: relative;
                 }
                 .coomer-panel.open {
                     transform: translateY(0);
@@ -1263,20 +1264,20 @@
                     }
                 }
 
-                /* 面板上方收藏快捷操作（移动端显示） */
+                /* 面板上方收藏快捷操作（移动端显示，绝对定位在面板顶部上方） */
                 .coomer-panel-quick-actions {
                     display: none;
-                    position: fixed;
+                    position: absolute;
                     left: 0;
                     right: 0;
-                    bottom: 75vh;
+                    bottom: 100%;
                     gap: 8px;
                     padding: 10px 16px;
                     background: rgba(18, 18, 18, 0.98);
                     backdrop-filter: blur(8px);
-                    border-top: 1px solid var(--coomer-primary);
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                    z-index: 100000;
+                    border-radius: 16px 16px 0 0;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-bottom: none;
                 }
                 @media (max-width: 767px) {
                     .coomer-panel-quick-actions.show {
@@ -1476,6 +1477,7 @@
             const panel = document.createElement('div');
             panel.className = 'coomer-panel';
             panel.innerHTML = `
+                <div class="coomer-panel-quick-actions"></div>
                 <div class="coomer-panel-header">
                     <span class="coomer-panel-title">👑 COOMER 臻选</span>
                     <div class="coomer-panel-header-actions">
@@ -1693,13 +1695,9 @@
 
         // 更新面板上方快捷操作（移动端）
         updatePanelQuickActions() {
-            // 获取或创建容器
-            let container = document.querySelector('.coomer-panel-quick-actions');
-            if (!container) {
-                container = document.createElement('div');
-                container.className = 'coomer-panel-quick-actions';
-                document.body.appendChild(container);
-            }
+            // 从面板内获取容器
+            const container = this.panel.querySelector('.coomer-panel-quick-actions');
+            if (!container) return;
 
             const pageType = PageParser.getCurrentPageType();
             const urlInfo = PageParser.parseUrlInfo();
@@ -1707,7 +1705,6 @@
             // 清空容器
             container.innerHTML = '';
             container.classList.remove('show');
-            container.style.top = '';
 
             // 如果不在艺术家或作品页面，不显示按钮
             if (pageType !== 'artist' && pageType !== 'post') {
@@ -1742,7 +1739,7 @@
 
         // 隐藏面板上方快捷操作
         hidePanelQuickActions() {
-            const container = document.querySelector('.coomer-panel-quick-actions');
+            const container = this.panel.querySelector('.coomer-panel-quick-actions');
             if (container) {
                 container.classList.remove('show');
             }
