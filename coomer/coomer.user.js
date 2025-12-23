@@ -298,8 +298,11 @@
                     .filter(Boolean);
             }
 
-            // 获取缩略图
-            const thumb = document.querySelector(DOM_SELECTORS.postThumbnail)?.src || document.querySelector('.post__image img')?.src || document.querySelector('.fileThumb img')?.src || '';
+            // 获取缩略图：优先使用作品图片，如果没有则使用艺术家头像作为封面
+            let thumb = document.querySelector(DOM_SELECTORS.postThumbnail)?.src || document.querySelector('.post__image img')?.src || document.querySelector('.fileThumb img')?.src || '';
+            if (!thumb && artistInfo?.avatar) {
+                thumb = artistInfo.avatar;
+            }
 
             // 判断类型
             const hasVideo = mediaUrls.some((url) => /\.(mp4|webm|mov|m4v)/i.test(url));
@@ -1850,7 +1853,7 @@
                 card.className = `coomer-card ${post.isPinned ? 'pinned' : ''}`;
                 // 媒体数量角标
                 const mediaCount = post.mediaUrls ? post.mediaUrls.length : 0;
-                const countBadge = mediaCount > 1 ? `<span class="coomer-card-count">${post.type === 'video' ? '🎬' : '📷'} ${mediaCount}</span>` : '';
+                const countBadge = mediaCount > 0 ? `<span class="coomer-card-count">${post.type === 'video' ? '🎬' : '📷'} ${mediaCount}</span>` : '';
                 card.innerHTML = `
                     <button class="coomer-card-pin ${post.isPinned ? 'pinned' : ''}" title="${post.isPinned ? '取消置顶' : '置顶'}">📌</button>
                     <button class="coomer-card-delete" title="删除">×</button>
