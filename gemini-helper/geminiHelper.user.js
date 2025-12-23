@@ -46,6 +46,7 @@
         READING_HISTORY: 'gemini_reading_history_settings',
         TAB_SETTINGS: 'gemini_tab_settings',
         CONVERSATIONS: 'gemini_conversations',
+        CONVERSATIONS_SETTINGS: 'gemini_conversations_settings',
         DEFAULT_PANEL_STATE: 'gemini_default_panel_state',
         AUTO_HIDE_PANEL: 'gemini_default_auto_hide',
         THEME_MODE: 'gemini_theme_mode', // 'light' | 'dark' | null
@@ -347,6 +348,8 @@
             conversationsDeleted: '已移除',
             // 会话设置
             conversationsSettingsTitle: '会话设置',
+            conversationsSyncUnpinLabel: '同步时更新取消置顶',
+            conversationsSyncUnpinDesc: '手动同步时，将云端未置顶的会话在本地也取消置顶',
             conversationsSyncDeleteLabel: '删除时同步删除云端',
             conversationsSyncDeleteDesc: '删除本地会话记录时，同时从 {site} 云端删除',
             conversationsSyncRenameLabel: '重命名时同步云端',
@@ -574,6 +577,8 @@
             conversationsDeleted: '已移除',
             // 會話設置
             conversationsSettingsTitle: '會話設置',
+            conversationsSyncUnpinLabel: '同步時更新取消置頂',
+            conversationsSyncUnpinDesc: '手動同步時，將雲端未置頂的會話在本地也取消置頂',
             conversationsSyncDeleteLabel: '刪除時同步刪除雲端',
             conversationsSyncDeleteDesc: '刪除本地會話記錄時，同時從 {site} 雲端刪除',
             conversationsSyncRenameLabel: '重命名時同步雲端',
@@ -800,6 +805,8 @@
             conversationsDeleted: 'Removed',
             // Conversation settings
             conversationsSettingsTitle: 'Conversation Settings',
+            conversationsSyncUnpinLabel: 'Sync unpin on sync',
+            conversationsSyncUnpinDesc: 'Update local pin status when conversation is unpinned in cloud',
             conversationsSyncDeleteLabel: 'Sync delete to cloud',
             conversationsSyncDeleteDesc: 'When deleting local record, also delete from {site} cloud',
             conversationsSyncRenameLabel: 'Sync rename to cloud',
@@ -1569,13 +1576,17 @@
                     const jslog = el.getAttribute('jslog') || '';
                     const idMatch = jslog.match(/\["c_([^"]+)"/);
                     const id = idMatch ? idMatch[1] : '';
-                    const title = el.textContent?.trim() || '';
+                    const title = el.querySelector('.conversation-title')?.textContent?.trim() || '';
+
+                    // 检测是否为云端置顶会话（检测实际的 push_pin 图标，而非容器）
+                    const isPinned = !!el.querySelector('mat-icon[fonticon="push_pin"]');
 
                     return {
                         id: id,
                         title: title,
                         url: id ? `https://gemini.google.com/app/${id}` : '',
                         isActive: el.classList.contains('selected'),
+                        isPinned: isPinned,
                     };
                 })
                 .filter((c) => c.id); // 过滤掉没有 ID 的项
@@ -1601,13 +1612,18 @@
                     const idMatch = jslog.match(/\["c_([^"]+)"/);
                     const id = idMatch ? idMatch[1] : '';
                     if (!id) return null;
+                    // 使用精确选择器提取标题，避免包含"固定的对话"等隐藏文字
+                    const title = el.querySelector('.conversation-title')?.textContent?.trim() || '';
+                    // 检测是否为云端置顶会话
+                    const isPinned = !!el.querySelector('mat-icon[fonticon="push_pin"]');
                     return {
                         id,
-                        title: el.textContent?.trim() || '',
+                        title,
                         url: `https://gemini.google.com/app/${id}`,
+                        isPinned,
                     };
                 },
-                getTitleElement: (el) => el,
+                getTitleElement: (el) => el.querySelector('.conversation-title') || el,
             };
         }
 
@@ -3596,6 +3612,7 @@
                                         title: info.title || 'New Conversation',
                                         url: info.url,
                                         folderId: folderId,
+                                        pinned: info.isPinned || false, // 同步云端置顶状态
                                         createdAt: Date.now(),
                                         updatedAt: Date.now(),
                                     };
@@ -3960,6 +3977,18 @@
                         existing.updatedAt = now;
                         updatedCount++;
                     }
+                    // 同步云端置顶状态
+                    if (item.isPinned && !existing.pinned) {
+                        // 云端置顶 -> 本地也置顶
+                        existing.pinned = true;
+                        existing.updatedAt = now;
+                        updatedCount++;
+                    } else if (!item.isPinned && existing.pinned && this.settings?.conversations?.syncUnpin) {
+                        // 云端未置顶且开启了 syncUnpin -> 本地取消置顶
+                        existing.pinned = false;
+                        existing.updatedAt = now;
+                        updatedCount++;
+                    }
                     // 确保 siteId 和 cid 是最新的
                     if (!existing.siteId) existing.siteId = this.siteAdapter.getSiteId();
                     if (item.cid && !existing.cid) existing.cid = item.cid;
@@ -3972,6 +4001,7 @@
                         title: item.title,
                         url: item.url,
                         folderId: folderId,
+                        pinned: item.isPinned || false, // 同步云端置顶状态
                         createdAt: now,
                         updatedAt: now,
                     };
@@ -7205,7 +7235,7 @@
                 collapsedButtonsOrder: GM_getValue(SETTING_KEYS.COLLAPSED_BUTTONS_ORDER, DEFAULT_COLLAPSED_BUTTONS_ORDER),
                 tabSettings: { ...DEFAULT_TAB_SETTINGS, ...GM_getValue(SETTING_KEYS.TAB_SETTINGS, {}) },
                 readingHistory: { ...DEFAULT_READING_HISTORY_SETTINGS, ...GM_getValue(SETTING_KEYS.READING_HISTORY, {}) },
-                conversations: { enabled: true },
+                conversations: { enabled: true, syncUnpin: false, ...GM_getValue(SETTING_KEYS.CONVERSATIONS_SETTINGS, {}) },
                 // 默认面板状态
                 defaultPanelState: GM_getValue(SETTING_KEYS.DEFAULT_PANEL_STATE, true),
                 // 自动隐藏面板
@@ -7246,7 +7276,7 @@
             GM_setValue(SETTING_KEYS.READING_HISTORY, settings.readingHistory);
             // 保存会话设置
             if (settings.conversations) {
-                GM_setValue('gemini_conversations_settings', settings.conversations);
+                GM_setValue(SETTING_KEYS.CONVERSATIONS_SETTINGS, settings.conversations);
             }
             GM_setValue('gemini_default_panel_state', settings.defaultPanelState);
             GM_setValue('gemini_default_auto_hide', settings.autoHidePanel);
@@ -7483,6 +7513,7 @@
                     --gh-folder-bg-expanded: #c7d2fe;
                     --gh-border-active: #6366f1;
                     --gh-tag-active-bg: ${colors.primary};
+                    --gh-checkbox-bg: #4f46e5; /* Indigo 600 - Premium Light */
                     
                     /* Folder Preset Colors */
                     --gh-folder-bg-0: #fef9e7;
@@ -7513,6 +7544,7 @@
                     --gh-folder-bg-expanded: rgba(66, 133, 244, 0.3);
                     --gh-border-active: #818cf8;
                     --gh-tag-active-bg: rgba(66, 133, 244, 0.6);
+                    --gh-checkbox-bg: #818cf8; /* Indigo 400 - Premium Dark */
 
                     /* Folder Preset Colors (Dark Mode Translucent) */
                     --gh-folder-bg-0: rgba(253, 224, 71, 0.15);
@@ -8146,11 +8178,11 @@
                 /* 复选框样式 */
                 .conversations-folder-checkbox {
                     margin-right: 8px; width: 16px; height: 16px; cursor: pointer;
-                    accent-color: #4b5563; flex-shrink: 0;
+                    accent-color: var(--gh-checkbox-bg, #4f46e5); flex-shrink: 0;
                 }
                 .conversations-item-checkbox {
                     width: 16px; height: 16px; margin-right: 8px; cursor: pointer;
-                    accent-color: #4b5563; flex-shrink: 0;
+                    accent-color: var(--gh-checkbox-bg, #4f46e5); flex-shrink: 0;
                 }
 
                 /* 底部批量操作栏 */
@@ -8491,11 +8523,15 @@
                     }
                 }
 
-                // 2. Sync to Plugin UI (ghMode)
+                // 2. Sync to Plugin UI (ghMode) and color-scheme
                 if (isDark) {
                     document.body.dataset.ghMode = 'dark';
+                    // 同步 color-scheme，确保原生控件（如 checkbox）颜色一致
+                    document.body.style.colorScheme = 'dark';
                 } else {
                     delete document.body.dataset.ghMode;
+                    // 同步 color-scheme，确保原生控件（如 checkbox）颜色一致
+                    document.body.style.colorScheme = 'light';
                 }
 
                 // 3. Sync to Settings (Persistence) & Button Icon
@@ -9566,6 +9602,32 @@
 
             const layoutSection = this.createCollapsibleSection(this.t('tabOrderSettings'), layoutContainer);
 
+            // 4.2 会话设置
+            const convSettingsContainer = createElement('div', {});
+
+            // 同步时更新取消置顶开关
+            const syncUnpinItem = createElement('div', { className: 'setting-item' });
+            const syncUnpinInfo = createElement('div', { className: 'setting-item-info' });
+            syncUnpinInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('conversationsSyncUnpinLabel')));
+            syncUnpinInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('conversationsSyncUnpinDesc')));
+
+            const syncUnpinToggle = createElement('div', {
+                className: 'setting-toggle' + (this.settings.conversations?.syncUnpin ? ' active' : ''),
+                id: 'toggle-sync-unpin',
+            });
+            syncUnpinToggle.addEventListener('click', () => {
+                if (!this.settings.conversations) this.settings.conversations = {};
+                this.settings.conversations.syncUnpin = !this.settings.conversations.syncUnpin;
+                syncUnpinToggle.classList.toggle('active', this.settings.conversations.syncUnpin);
+                this.saveSettings();
+                showToast(this.settings.conversations.syncUnpin ? this.t('settingOn') : this.t('settingOff'));
+            });
+            syncUnpinItem.appendChild(syncUnpinInfo);
+            syncUnpinItem.appendChild(syncUnpinToggle);
+            convSettingsContainer.appendChild(syncUnpinItem);
+
+            const convSettingsSection = this.createCollapsibleSection(this.t('conversationsSettingsTitle'), convSettingsContainer, { defaultExpanded: false });
+
             // 4.5 阅读历史设置
             const anchorContainer = createElement('div', {});
 
@@ -10193,6 +10255,8 @@
             content.appendChild(panelSettingsSection);
             // 3. 界面排版
             content.appendChild(layoutSection);
+            // 3.5. 会话设置
+            content.appendChild(convSettingsSection);
             // 4. 标签页设置
             if (tabSettingsSection) content.appendChild(tabSettingsSection);
             // 5. 阅读导航
