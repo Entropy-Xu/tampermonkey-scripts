@@ -639,6 +639,13 @@
                     display: none !important;
                 }
 
+                /* 屏蔽广告元素 */
+                .global-sidebar-entry-item[href*="tsyndicate.com"],
+                #ts_ad_native_wxfxp,
+                .ts-im-container {
+                    display: none !important;
+                }
+
                 /* 悬浮按钮 - The Orb */
                 .coomer-fab {
                     position: fixed;
