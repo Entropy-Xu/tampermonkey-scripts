@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.9.3
+// @version      1.9.4
 // @description  Gemini 助手：支持会话管理（分类/搜索/标签）、对话大纲、提示词管理、模型锁定、面板状态控制、主题一键切换、标签页增强（状态显示/隐私模式/生成完成通知）、阅读历史恢复、双向锚点、自动加宽页面、中文输入修复、智能暗色模式适配，适配 Gemini 标准版/企业版
 // @description:en Gemini Helper: Supports conversation management (folders/search/tags), outline navigation, prompt management, model locking, collapsed button reorder, circular theme toggle animation, tab enhancements (status display/privacy mode/completion notification), reading history, bidirectional anchor, auto page width, Chinese input fix, smart dark mode, adaptation for Gemini/Gemini Enterprise
 // @author       urzeye
@@ -5645,7 +5645,7 @@
                 value: selectedEmoji,
                 maxLength: 4, // 稍微放宽长度
                 placeholder: '☺',
-                style: 'width: 60px; text-align: center; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 4px; padding: 2px; font-size: 16px;',
+                style: 'width: 60px; text-align: center; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 4px; padding: 2px; font-size: 16px; background: var(--gh-input-bg, #ffffff); color: var(--gh-text, #1f2937);',
             });
 
             customRow.appendChild(customLabel);
@@ -7497,15 +7497,15 @@
 
                 body[data-gh-mode="dark"] {
                     --gh-bg: #1e1e1e;
-                    --gh-bg-secondary: #2d2d2d;
+                    --gh-bg-secondary: #0b0b0b;
                     --gh-text: #e3e3e3;
                     --gh-text-secondary: #a0a0a0;
-                    --gh-border: #444444;
-                    --gh-hover: #333333;
-                    --gh-shadow: 0 10px 40px rgba(0,0,0,0.4);
-                    --gh-input-bg: #2f2f2f;
-                    --gh-input-border: #555555;
-                    --gh-active-bg: #404040;
+                    --gh-border: #333333;
+                    --gh-hover: #262626;
+                    --gh-shadow: 0 10px 40px rgba(0,0,0,0.6);
+                    --gh-input-bg: #262626;
+                    --gh-input-border: #404040;
+                    --gh-active-bg: #333333;
 
                     /* Dark Mode Semantic Overrides */
                     --gh-header-bg: #1e1e1e;
@@ -7523,6 +7523,20 @@
                     --gh-folder-bg-5: rgba(253, 224, 71, 0.1);
                     --gh-folder-bg-6: rgba(34, 211, 238, 0.15);
                     --gh-folder-bg-7: rgba(232, 121, 249, 0.15);
+                    --gh-folder-bg-6: rgba(34, 211, 238, 0.15);
+                    --gh-folder-bg-7: rgba(232, 121, 249, 0.15);
+                }
+
+                /* Dark Mode Tab Overrides */
+                body[data-gh-mode="dark"] .prompt-panel-tab {
+                    border-top: 3px solid transparent;
+                    border-bottom: 1px solid transparent;
+                    margin-bottom: -1px;
+                }
+                body[data-gh-mode="dark"] .prompt-panel-tab.active {
+                    border-top-color: var(--gh-tag-active-bg);
+                    border-bottom-color: var(--gh-bg);
+                    background: var(--gh-bg);
                 }
 
                 /* 主面板样式 */
@@ -7569,6 +7583,7 @@
                 .prompt-search-input {
                     width: 100%; padding: 8px 12px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 8px; font-size: 14px;
                     transition: all 0.2s; box-sizing: border-box;
+                    background: var(--gh-input-bg, #ffffff); color: var(--gh-text, #1f2937);
                 }
                 .prompt-search-input:focus { outline: none; border-color: ${colors.primary}; }
                 .prompt-categories { padding: 8px 12px; display: flex; gap: 6px; flex-wrap: wrap; background: var(--gh-bg, white); border-bottom: 1px solid var(--gh-border, #e5e7eb); }
@@ -7630,6 +7645,7 @@
                 .prompt-form-input, .prompt-form-textarea {
                     width: 100%; padding: 8px 12px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 6px; font-size: 14px;
                     transition: all 0.2s; box-sizing: border-box;
+                    background: var(--gh-input-bg, #ffffff); color: var(--gh-text, #1f2937);
                 }
                 .prompt-form-textarea { min-height: 100px; resize: vertical; font-family: inherit; }
                 .prompt-form-input:focus, .prompt-form-textarea:focus { outline: none; border-color: ${colors.primary}; }
@@ -7868,6 +7884,7 @@
                     font-size: 14px;
                     box-sizing: border-box;
                     transition: all 0.2s;
+                    background: var(--gh-input-bg, #ffffff); color: var(--gh-text, #1f2937);
                 }
                 .conversations-search-input:focus {
                     outline: none;
@@ -8188,6 +8205,7 @@
                 .conversations-dialog-input {
                     width: 100%; padding: 10px 12px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 8px;
                     font-size: 14px; box-sizing: border-box;
+                    background: var(--gh-input-bg, #ffffff); color: var(--gh-text, #1f2937);
                 }
                 .conversations-dialog-input:focus {
                     outline: none; border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.1);
@@ -8332,6 +8350,7 @@
                 .outline-search-input {
                     flex: 1; height: 28px; padding: 0 10px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 6px;
                     font-size: 13px; color: var(--gh-text, #374151); outline: none; transition: all 0.2s;
+                    background: var(--gh-input-bg, #ffffff);
                 }
                 .outline-search-input:focus { border-color: ${colors.primary}; box-shadow: 0 0 0 2px rgba(66,133,244,0.1); }
                 .outline-search-input::placeholder { color: #9ca3af; }
