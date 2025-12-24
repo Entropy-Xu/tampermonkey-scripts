@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.9.6
+// @version      1.9.7
 // @description  Gemini 助手：支持会话管理（分类/搜索/标签）、对话大纲、提示词管理、模型锁定、面板状态控制、主题一键切换、标签页增强、Markdown 加粗修复、阅读历史恢复、双向锚点、自动加宽页面、中文输入修复、智能暗色模式适配，适配 Gemini 标准版/企业版
 // @description:en Gemini Helper: Supports conversation management (folders/search/tags), outline navigation, prompt management, model locking, Markdown bold fix, tab enhancements (status display/privacy mode/completion notification), reading history, bidirectional anchor, auto page width, Chinese input fix, smart dark mode, adaptation for Gemini/Gemini Enterprise
 // @author       urzeye
@@ -2566,6 +2566,10 @@
             // 'idle' | 'generating' | 'completed'
             this._aiState = 'idle';
             this._lastAiState = 'idle';
+
+            // 用户是否在前台看到过生成完成（用于避免误发通知）
+            this._userSawCompletion = false;
+            this._boundVisibilityHandler = this._onVisibilityChange.bind(this);
         }
 
         /**
@@ -2582,6 +2586,8 @@
             this._networkConfig = this.adapter.getNetworkMonitorConfig?.();
             if (typeof NetworkMonitor !== 'undefined' && this._networkConfig) {
                 this._initNetworkMonitor();
+                // 监听页面可见性变化，用于追踪用户是否看到完成状态
+                document.addEventListener('visibilitychange', this._boundVisibilityHandler);
             }
 
             // 定时更新标签页标题
@@ -2613,16 +2619,31 @@
         }
 
         /**
+         * 页面可见性变化处理
+         * 用于追踪用户是否在前台看到过生成完成
+         */
+        _onVisibilityChange() {
+            // 用户切换页面时（无论进入还是离开），检查 DOM 状态
+            // 如果正在生成但 DOM 显示已完成，说明用户看到了完成状态
+            if (this._aiState === 'generating' && !this.adapter.isGenerating()) {
+                this._userSawCompletion = true;
+            }
+        }
+
+        /**
          * AI 任务完成处理（由 NetworkMonitor 触发）
          */
         _onAiComplete() {
             const wasGenerating = this._aiState === 'generating';
             this._setAiState('completed');
 
-            // 只在后台且之前正在生成时触发通知
-            if (wasGenerating && document.hidden) {
+            // 只在后台、之前正在生成、且用户没有看到过完成状态时触发通知
+            if (wasGenerating && document.hidden && !this._userSawCompletion) {
                 this._sendCompletionNotification();
             }
+
+            // 重置状态
+            this._userSawCompletion = false;
 
             // 强制更新标签页标题
             this.updateTabName(true);
@@ -2680,6 +2701,9 @@
                 clearInterval(this.intervalId);
                 this.intervalId = null;
             }
+
+            // 移除可见性监听
+            document.removeEventListener('visibilitychange', this._boundVisibilityHandler);
 
             this._stopNetworkMonitor();
         }

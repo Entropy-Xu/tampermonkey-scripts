@@ -8,6 +8,7 @@
 
 1. [滚动容器错误匹配](#1-滚动容器错误匹配)
 2. [阅读历史会话切换后不更新](#2-阅读历史会话切换后不更新)
+3. [用户看完生成结果后切换页面仍收到通知](#3-用户看完生成结果后切换页面仍收到通知)
 
 ---
 
@@ -126,6 +127,99 @@ this.readingProgressManager.restartRecording();  // 原为 startRecording()
 | **SPA 容器会变**     | 单页应用中 DOM 元素可能随时被替换，事件监听需要重新绑定                         |
 | **状态标志需配套**      | `isRecording` 防重入是好的，但需要配套提供 `restart` 方法处理容器更换场景      |
 | **getter vs 引用** | `scrollManager.container` 是 getter，每次调用重新查询 DOM，不是固定引用 |
+
+---
+
+## 3. 用户看完生成结果后切换页面仍收到通知
+
+**日期**: 2025-12-24
+
+### 症状
+
+- 用户在 Gemini 页面前台观看 AI 生成回复
+- AI 生成完成后，用户看完内容并切换到其他页面
+- 切换后收到"生成完成"的桌面通知（不应该发送）
+
+### 背景
+
+Gemini 普通版有两套生成完成检测机制：
+
+1. **NetworkMonitor**（网络层）：通过 Hook Fetch 监控 API 请求，使用 3 秒静默期（`silenceThreshold`）判断完成
+2. **isGenerating()**（DOM 层）：检测停止按钮 `mat-icon[fonticon="stop"]` 是否存在
+
+通知触发的原代码逻辑：
+
+```javascript
+_onAiComplete() {
+    if (wasGenerating && document.hidden) {
+        this._sendCompletionNotification();
+    }
+}
+```
+
+### 根因
+
+**时序问题**：`silenceThreshold` 导致的 3 秒判定延迟窗口
+
+```
+T+0s: AI 生成完成，停止按钮消失
+T+0s~T+3s: NetworkMonitor 等待静默确认
+T+1.5s: 用户切换到其他页面（document.hidden = true）
+T+3s: NetworkMonitor 确认完成，触发 _onAiComplete()
+     → wasGenerating = true, document.hidden = true
+     → 发送通知（错误！用户已经看完了）
+```
+
+核心问题：**只检查 `onComplete` 触发时的 `document.hidden`，无法区分"用户一直在后台等待"和"用户看完才离开"**。
+
+### 修复方案
+
+通过监听 `visibilitychange` 事件，追踪用户是否在前台看到过生成完成：
+
+```javascript
+constructor()
+{
+    this._userSawCompletion = false;
+    this._boundVisibilityHandler = this._onVisibilityChange.bind(this);
+}
+
+start()
+{
+    document.addEventListener('visibilitychange', this._boundVisibilityHandler);
+}
+
+_onVisibilityChange()
+{
+    // 用户切换页面时，检查 DOM 状态
+    // 如果正在生成但 DOM 显示已完成，说明用户看到了完成状态
+    if (this._aiState === 'generating' && !this.adapter.isGenerating()) {
+        this._userSawCompletion = true;
+    }
+}
+
+_onAiComplete()
+{
+    // 只有用户没看到过完成状态时才发通知
+    if (wasGenerating && document.hidden && !this._userSawCompletion) {
+        this._sendCompletionNotification();
+    }
+    this._userSawCompletion = false;  // 重置
+}
+
+stop()
+{
+    document.removeEventListener('visibilitychange', this._boundVisibilityHandler);
+}
+```
+
+### 经验总结
+
+| 教训                      | 说明                                              |
+|-------------------------|-------------------------------------------------|
+| **时序问题难以复现**            | 用户行为是任意的，需要穷举所有时序场景进行验证                         |
+| **状态快照 vs 实时检测**        | `onComplete` 时检测 `hidden` 只是快照，无法反映整个生成过程中用户的行为 |
+| **visibilitychange 可靠** | 标准 W3C API，覆盖标签页切换、最小化、锁屏等场景，性能开销几乎为零           |
+| **边界情况可接受**             | DOM 更新的几十毫秒窗口期可能导致极小概率误判，但实际影响可忽略               |
 
 ---
 
