@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.9.7
+// @version      1.9.8
 // @description  Gemini 助手：支持会话管理（分类/搜索/标签）、对话大纲、提示词管理、模型锁定、面板状态控制、主题一键切换、标签页增强、Markdown 加粗修复、阅读历史恢复、双向锚点、自动加宽页面、中文输入修复、智能暗色模式适配，适配 Gemini 标准版/企业版
 // @description:en Gemini Helper: Supports conversation management (folders/search/tags), outline navigation, prompt management, model locking, Markdown bold fix, tab enhancements (status display/privacy mode/completion notification), reading history, bidirectional anchor, auto page width, Chinese input fix, smart dark mode, adaptation for Gemini/Gemini Enterprise
 // @author       urzeye
@@ -3016,7 +3016,7 @@
     /**
      * Markdown 加粗渲染修复器
      * 修复 Gemini 普通版响应中 **text** 未正确渲染为加粗的问题
-     * 使用 DOM API 操作 TextNode，不使用 innerHTML
+     * 使用 DOM API 操作 TextNode
      */
     class MarkdownFixer {
         #processedNodes = new WeakSet();
@@ -3064,7 +3064,10 @@
             if (this.#processedNodes.has(p)) return;
             this.#processedNodes.add(p);
 
-            // 使用 TreeWalker 遍历 TextNode
+            // 先尝试跨节点修复（处理 ** 跨越 <b> 标签的情况）
+            this.fixCrossNodeBold(p);
+
+            // 再处理单节点内的加粗（未被跨节点处理的部分）
             const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null, false);
             const nodesToProcess = [];
 
@@ -3077,6 +3080,61 @@
             }
 
             nodesToProcess.forEach((node) => this.processTextNode(node));
+        }
+
+        /**
+         * 修复跨节点加粗
+         * 策略：将 <b>text</b> 展开为 **text**，然后由 processTextNode 统一处理
+         * @param {HTMLElement} p 段落元素
+         */
+        fixCrossNodeBold(p) {
+            // 查找段落中所有的 <b> 标签
+            const boldTags = Array.from(p.querySelectorAll('b'));
+            if (boldTags.length === 0) return;
+
+            // 将每个 <b>text</b> 替换为 **text**
+            boldTags.forEach((bTag) => {
+                // 跳过 code/pre 内的 <b> 标签
+                if (this.isInsideProtectedArea(bTag)) return;
+
+                try {
+                    // 创建文档片段: ** + 原内容 + **
+                    const fragment = document.createDocumentFragment();
+                    fragment.appendChild(document.createTextNode('**'));
+
+                    // 将 <b> 的所有子节点移到片段中
+                    while (bTag.firstChild) {
+                        fragment.appendChild(bTag.firstChild);
+                    }
+
+                    fragment.appendChild(document.createTextNode('**'));
+
+                    // 用片段替换 <b> 标签
+                    bTag.parentNode.replaceChild(fragment, bTag);
+                } catch (e) {
+                    console.warn('[MarkdownFixer] Failed to unwrap <b> tag:', e);
+                }
+            });
+
+            // 规范化段落，合并相邻的文本节点，便于后续 processTextNode 处理
+            p.normalize();
+        }
+
+        /**
+         * 检查元素是否在受保护区域内（code/pre/MathJax）
+         * @param {HTMLElement} element 要检查的元素
+         * @returns {boolean}
+         */
+        isInsideProtectedArea(element) {
+            let parent = element.parentNode;
+            while (parent && parent !== document.body) {
+                const tag = parent.tagName?.toLowerCase();
+                if (tag === 'code' || tag === 'pre' || parent.classList?.contains('MathJax')) {
+                    return true;
+                }
+                parent = parent.parentNode;
+            }
+            return false;
         }
 
         /**
