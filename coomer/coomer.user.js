@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Coomer 佬友严选
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
-// @description  OnlyFans 赛博菩萨，佬友严选，值得信赖！艺术家收藏、作品管理、视频播放，去广告适配
+// @version      1.0.4
+// @description  OnlyFans 赛博菩萨，佬友严选，值得信赖！艺术家收藏、作品管理、Video.js 增强播放（快进/倍速/自动全屏），去广告适配
 // @author       urzeye
 // @match        https://coomer.st/*
 // @icon         https://thumbs.onlyfans.com/public/files/thumbs/c50/m/mk/mka/mkamcrf6rjmcwo0jj4zoavhmalzohe5a1640180203/avatar.jpg
@@ -14,6 +14,7 @@
 // @grant        window.onurlchange
 // @resource     videojs_css https://cdnjs.cloudflare.com/ajax/libs/video.js/8.16.1/video-js.min.css
 // @require      https://cdnjs.cloudflare.com/ajax/libs/video.js/8.16.1/video.min.js
+// @require      https://cdn.jsdelivr.net/npm/fuse.js@7.1.0/dist/fuse.min.js
 // @run-at       document-start
 // ==/UserScript==
 
@@ -466,13 +467,16 @@
     // ============================================
     // AdBlocker - 广告拦截
     // ============================================
+    const AD_DOMAINS = ['tsyndicate.com', 'trafficstars.com', 'exoclick.com', 'exosrv.com', 'trafserv.io', 'tsyndlab.com', 'clksite.com', 'syndication.exoclick.com'];
+
     const AdBlocker = {
         init() {
             const settings = StorageManager.getSettings();
             if (!settings.blockAds) return;
 
-            // Hook fluidPlayer 初始化，移除广告配置
             this.hookFluidPlayer();
+            this.hookXHR();
+            this.hookFetch();
         },
 
         hookFluidPlayer() {
@@ -505,6 +509,64 @@
                             }
                         }
                         return originalDefineProperty.call(this, obj, prop, descriptor);
+                    };
+                })();
+            `;
+            document.documentElement.appendChild(script);
+            script.remove();
+        },
+
+        hookXHR() {
+            const script = document.createElement('script');
+            script.textContent = `
+                (function() {
+                    const adDomains = ${JSON.stringify(AD_DOMAINS)};
+                    const isAdUrl = (url) => {
+                        try {
+                            const urlObj = new URL(url, location.origin);
+                            return adDomains.some(d => urlObj.hostname.includes(d));
+                        } catch { return false; }
+                    };
+
+                    const originalOpen = XMLHttpRequest.prototype.open;
+                    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                        if (isAdUrl(url)) {
+                            this._blocked = true;
+                            return;
+                        }
+                        return originalOpen.call(this, method, url, ...args);
+                    };
+
+                    const originalSend = XMLHttpRequest.prototype.send;
+                    XMLHttpRequest.prototype.send = function(...args) {
+                        if (this._blocked) return;
+                        return originalSend.apply(this, args);
+                    };
+                })();
+            `;
+            document.documentElement.appendChild(script);
+            script.remove();
+        },
+
+        hookFetch() {
+            const script = document.createElement('script');
+            script.textContent = `
+                (function() {
+                    const adDomains = ${JSON.stringify(AD_DOMAINS)};
+                    const isAdUrl = (url) => {
+                        try {
+                            const urlObj = new URL(url, location.origin);
+                            return adDomains.some(d => urlObj.hostname.includes(d));
+                        } catch { return false; }
+                    };
+
+                    const originalFetch = window.fetch;
+                    window.fetch = function(input, init) {
+                        const url = typeof input === 'string' ? input : input.url;
+                        if (isAdUrl(url)) {
+                            return Promise.reject(new Error('Blocked by AdBlocker'));
+                        }
+                        return originalFetch.apply(this, arguments);
                     };
                 })();
             `;
@@ -570,6 +632,302 @@
             } else if (element.webkitRequestFullscreen) {
                 element.webkitRequestFullscreen();
             }
+        },
+    };
+
+    // ============================================
+    // VideoPlayerEnhancer - 替换原生播放器为 Video.js
+    // ============================================
+    const VideoPlayerEnhancer = {
+        playerCounter: 0,
+        observer: null,
+
+        init() {
+            // 等待 DOM 加载完成
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => this.setup());
+            } else {
+                this.setup();
+            }
+        },
+
+        setup() {
+            // 处理页面上已存在的 Fluid Player
+            this.replaceExistingPlayers();
+
+            // 使用 MutationObserver 检测新出现的 Fluid Player
+            this.observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            // 检查是否是 Fluid Player 容器或包含 Fluid Player
+                            if (node.classList?.contains('fluid_video_wrapper')) {
+                                this.replacePlayer(node);
+                            } else if (node.querySelector) {
+                                const fluidWrappers = node.querySelectorAll('.fluid_video_wrapper');
+                                fluidWrappers.forEach((wrapper) => this.replacePlayer(wrapper));
+                            }
+                        }
+                    }
+                }
+            });
+
+            this.observer.observe(document.body, { childList: true, subtree: true });
+        },
+
+        replaceExistingPlayers() {
+            const fluidWrappers = document.querySelectorAll('.fluid_video_wrapper');
+            fluidWrappers.forEach((wrapper) => this.replacePlayer(wrapper));
+        },
+
+        replacePlayer(fluidWrapper) {
+            // 防止重复处理
+            if (fluidWrapper._coomerReplaced) return;
+            fluidWrapper._coomerReplaced = true;
+
+            // 获取原始视频元素和视频源
+            const originalVideo = fluidWrapper.querySelector('video');
+            if (!originalVideo) return;
+
+            const source = originalVideo.querySelector('source');
+            const videoSrc = source?.src || originalVideo.src;
+            if (!videoSrc) return;
+
+            // 获取原始尺寸
+            const computedStyle = window.getComputedStyle(fluidWrapper);
+            const originalWidth = fluidWrapper.offsetWidth || computedStyle.width;
+            const originalHeight = fluidWrapper.offsetHeight || computedStyle.height;
+
+            // 创建新的容器
+            const playerId = `coomer-player-${this.playerCounter++}`;
+            const container = document.createElement('div');
+            container.className = 'coomer-video-container';
+            container.style.cssText = `
+                width: ${typeof originalWidth === 'number' ? originalWidth + 'px' : originalWidth};
+                max-width: 100%;
+                margin: 0 auto;
+            `;
+
+            // 创建 Video.js 播放器元素
+            const videoElement = document.createElement('video');
+            videoElement.id = playerId;
+            videoElement.className = 'video-js vjs-big-play-centered';
+            videoElement.setAttribute('controls', '');
+            videoElement.setAttribute('preload', 'metadata');
+            videoElement.setAttribute('playsinline', '');
+            videoElement.setAttribute('webkit-playsinline', '');
+
+            const sourceElement = document.createElement('source');
+            sourceElement.src = videoSrc;
+            sourceElement.type = 'video/mp4';
+            videoElement.appendChild(sourceElement);
+
+            container.appendChild(videoElement);
+
+            // 替换 DOM
+            fluidWrapper.parentNode.replaceChild(container, fluidWrapper);
+
+            // 初始化 Video.js
+            this.initVideoJs(playerId);
+        },
+
+        initVideoJs(playerId) {
+            // 确保 videojs 可用
+            if (typeof videojs === 'undefined') {
+                console.warn('[Coomer] Video.js not loaded, retrying...');
+                setTimeout(() => this.initVideoJs(playerId), 500);
+                return;
+            }
+
+            const settings = StorageManager.getSettings();
+            const isMobile = window.innerWidth < 768;
+
+            const player = videojs(playerId, {
+                fluid: true,
+                responsive: true,
+                controls: true,
+                preload: 'metadata',
+                playbackRates: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+                userActions: {
+                    doubleClick: true,
+                    hotkeys: true,
+                },
+                controlBar: {
+                    children: [
+                        'playToggle',
+                        'skipBackward',
+                        'skipForward',
+                        'currentTimeDisplay',
+                        'timeDivider',
+                        'durationDisplay',
+                        'progressControl',
+                        'playbackRateMenuButton',
+                        'volumePanel',
+                        'pictureInPictureToggle',
+                        'fullscreenToggle',
+                    ],
+                    skipButtons: {
+                        forward: 10,
+                        backward: 10,
+                    },
+                },
+            });
+
+            // 键盘快捷键增强 + 自动全屏
+            player.ready(() => {
+                // 自动全屏（设置开启时尝试触发，移动端可能因浏览器限制而失败）
+                if (settings.autoFullscreen) {
+                    player.one('play', () => {
+                        // 延迟确保控件完全渲染
+                        setTimeout(() => {
+                            if (!document.fullscreenElement && !player.paused()) {
+                                player.requestFullscreen().catch(() => {});
+                            }
+                        }, 300);
+                    });
+                }
+
+                const videoEl = player.el();
+                videoEl.addEventListener('keydown', (e) => {
+                    switch (e.key) {
+                        case 'ArrowLeft':
+                            e.preventDefault();
+                            player.currentTime(Math.max(0, player.currentTime() - 10));
+                            break;
+                        case 'ArrowRight':
+                            e.preventDefault();
+                            player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+                            break;
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            player.volume(Math.min(1, player.volume() + 0.1));
+                            break;
+                        case 'ArrowDown':
+                            e.preventDefault();
+                            player.volume(Math.max(0, player.volume() - 0.1));
+                            break;
+                    }
+                });
+            });
+
+            return player;
+        },
+
+        // 注入 Video.js 容器样式
+        injectStyles() {
+            GM_addStyle(`
+                .coomer-video-container {
+                    background: #000;
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
+                .coomer-video-container .video-js {
+                    width: 100%;
+                    border-radius: 8px;
+                }
+                /* Video.js 主题适配 */
+                .coomer-video-container .vjs-control-bar {
+                    background: rgba(18, 18, 18, 0.9);
+                }
+                .coomer-video-container .vjs-play-progress,
+                .coomer-video-container .vjs-volume-level {
+                    background: var(--coomer-primary, #E0AA3E);
+                }
+                .coomer-video-container .vjs-big-play-button {
+                    background: rgba(18, 18, 18, 0.8);
+                    border: 2px solid var(--coomer-primary, #E0AA3E);
+                    border-radius: 50%;
+                }
+                .coomer-video-container .vjs-big-play-button:hover {
+                    background: var(--coomer-primary, #E0AA3E);
+                }
+                /* 移动端优化 */
+                @media (max-width: 767px) {
+                    .coomer-video-container .vjs-control-bar {
+                        font-size: 12px;
+                    }
+                    .coomer-video-container .vjs-time-control {
+                        padding: 0 4px;
+                        min-width: auto;
+                    }
+                }
+            `);
+        },
+    };
+
+    // ============================================
+    // SearchManager - 搜索过滤
+    // ============================================
+    const SearchManager = {
+        artistFuse: null,
+        postFuse: null,
+        currentQuery: '',
+        debounceTimer: null,
+
+        // 初始化艺术家搜索
+        initArtistSearch(artists) {
+            if (typeof Fuse === 'undefined') {
+                console.warn('[Coomer] Fuse.js not loaded');
+                return false;
+            }
+            this.artistFuse = new Fuse(artists, {
+                keys: ['id', 'nickname', 'platform'],
+                threshold: 0.4, // 较严格的匹配，允许少量拼写错误
+                includeScore: true,
+                ignoreLocation: true,
+                minMatchCharLength: 1,
+            });
+            return true;
+        },
+
+        // 初始化作品搜索
+        initPostSearch(posts) {
+            if (typeof Fuse === 'undefined') {
+                console.warn('[Coomer] Fuse.js not loaded');
+                return false;
+            }
+            this.postFuse = new Fuse(posts, {
+                keys: ['title', 'artistName', 'content'],
+                threshold: 0.4, // 较严格的匹配，允许少量拼写错误
+                includeScore: true,
+                ignoreLocation: true,
+                minMatchCharLength: 1,
+            });
+            return true;
+        },
+
+        // 搜索艺术家
+        searchArtists(query, artists) {
+            const q = query.trim();
+            if (!q) return null;
+            if (!this.initArtistSearch(artists)) {
+                // Fuse 未加载，使用简单的字符串匹配
+                const lowerQ = q.toLowerCase();
+                return artists.filter((a) => a.id?.toLowerCase().includes(lowerQ) || a.nickname?.toLowerCase().includes(lowerQ) || a.platform?.toLowerCase().includes(lowerQ));
+            }
+            const results = this.artistFuse.search(q);
+            console.log('[Coomer] Artist search results:', q, results.length);
+            return results.map((r) => r.item);
+        },
+
+        // 搜索作品
+        searchPosts(query, posts) {
+            const q = query.trim();
+            if (!q) return null;
+            if (!this.initPostSearch(posts)) {
+                // Fuse 未加载，使用简单的字符串匹配
+                const lowerQ = q.toLowerCase();
+                return posts.filter((p) => p.title?.toLowerCase().includes(lowerQ) || p.artistName?.toLowerCase().includes(lowerQ) || p.content?.toLowerCase().includes(lowerQ));
+            }
+            const results = this.postFuse.search(q);
+            console.log('[Coomer] Post search results:', q, results.length);
+            return results.map((r) => r.item);
+        },
+
+        // 防抖搜索
+        debounceSearch(callback, delay = 300) {
+            if (this.debounceTimer) clearTimeout(this.debounceTimer);
+            this.debounceTimer = setTimeout(callback, delay);
         },
     };
 
@@ -1368,6 +1726,73 @@
                     background: rgba(255, 255, 255, 0.1);
                     border-color: rgba(255, 255, 255, 0.1);
                 }
+
+                /* 搜索框 */
+                .coomer-search-container {
+                    flex: 1;
+                    max-width: 200px;
+                    margin: 0 12px;
+                }
+                .coomer-search-wrapper {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                }
+                .coomer-search-input {
+                    width: 100%;
+                    padding: 6px 28px 6px 28px;
+                    background: rgba(255, 255, 255, 0.08);
+                    border: 1px solid transparent;
+                    border-radius: 6px;
+                    color: var(--coomer-text);
+                    font-size: 12px;
+                    outline: none;
+                    transition: all 0.2s;
+                }
+                .coomer-search-input:focus {
+                    border-color: var(--coomer-primary);
+                    background: rgba(255, 255, 255, 0.12);
+                }
+                .coomer-search-input::placeholder {
+                    color: var(--coomer-text-sec);
+                }
+                .coomer-search-icon {
+                    position: absolute;
+                    left: 8px;
+                    font-size: 12px;
+                    color: var(--coomer-text-sec);
+                    pointer-events: none;
+                }
+                .coomer-search-clear {
+                    position: absolute;
+                    right: 4px;
+                    background: transparent;
+                    border: none;
+                    color: var(--coomer-text-sec);
+                    cursor: pointer;
+                    padding: 2px 6px;
+                    font-size: 14px;
+                    line-height: 1;
+                    opacity: 0;
+                    transition: opacity 0.2s;
+                }
+                .coomer-search-clear.visible {
+                    opacity: 1;
+                }
+                .coomer-search-clear:hover {
+                    color: var(--coomer-primary);
+                }
+                /* 无搜索结果 */
+                .coomer-no-results {
+                    text-align: center;
+                    padding: 40px 20px;
+                    color: var(--coomer-text-sec);
+                }
+                .coomer-no-results-icon {
+                    font-size: 48px;
+                    margin-bottom: 12px;
+                    opacity: 0.5;
+                }
             `);
         },
 
@@ -1483,7 +1908,14 @@
             panel.className = 'coomer-panel';
             panel.innerHTML = `
                 <div class="coomer-panel-header">
-                    <span class="coomer-panel-title">👑 COOMER 臻选</span>
+                    <span class="coomer-panel-title">👑 臻选</span>
+                    <div class="coomer-search-container">
+                        <div class="coomer-search-wrapper">
+                            <span class="coomer-search-icon">🔍</span>
+                            <input type="text" class="coomer-search-input" placeholder="搜索艺术家...">
+                            <button class="coomer-search-clear">×</button>
+                        </div>
+                    </div>
                     <div class="coomer-panel-header-actions">
                         <button class="coomer-panel-settings" title="设置">⚙️</button>
                         <button class="coomer-panel-close">×</button>
@@ -1512,6 +1944,34 @@
                 this.switchTab('settings');
             });
 
+            // 搜索框事件
+            const searchInput = panel.querySelector('.coomer-search-input');
+            const searchClear = panel.querySelector('.coomer-search-clear');
+            this.searchInput = searchInput;
+
+            // 点击搜索框时，如果面板未完全展开则自动展开
+            searchInput.addEventListener('focus', () => {
+                if (!this.isOpen) {
+                    this.open();
+                }
+            });
+
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value;
+                searchClear.classList.toggle('visible', query.length > 0);
+                SearchManager.debounceSearch(() => {
+                    this.handleSearch(query);
+                });
+            });
+
+            searchClear.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                searchInput.value = '';
+                searchClear.classList.remove('visible');
+                this.handleSearch('');
+            });
+
             // 标签页切换事件
             panel.querySelectorAll('.coomer-tab').forEach((tab) => {
                 tab.addEventListener('click', (e) => {
@@ -1532,6 +1992,28 @@
 
             // 渲染初始内容
             this.renderTab('artists');
+        },
+
+        // 处理搜索
+        handleSearch(query) {
+            SearchManager.currentQuery = query.trim();
+            this.renderTab(this.activeTab);
+        },
+
+        // 更新搜索框占位符
+        updateSearchPlaceholder() {
+            if (!this.searchInput) return;
+            const placeholders = {
+                artists: '搜索艺术家...',
+                posts: '搜索作品...',
+                settings: '搜索设置...',
+            };
+            this.searchInput.placeholder = placeholders[this.activeTab] || '搜索...';
+            // 设置页面隐藏搜索框
+            const searchContainer = this.panel.querySelector('.coomer-search-container');
+            if (searchContainer) {
+                searchContainer.style.display = this.activeTab === 'settings' ? 'none' : 'block';
+            }
         },
 
         // SPA URL 变化时重新创建快捷操作按钮
@@ -1818,6 +2300,14 @@
             this.panel.querySelectorAll('.coomer-tab').forEach((tab) => {
                 tab.classList.toggle('active', tab.dataset.tab === tabName);
             });
+            // 切换标签时清空搜索
+            if (this.searchInput) {
+                this.searchInput.value = '';
+                SearchManager.currentQuery = '';
+                const clearBtn = this.panel.querySelector('.coomer-search-clear');
+                if (clearBtn) clearBtn.classList.remove('visible');
+            }
+            this.updateSearchPlaceholder();
             this.renderTab(tabName);
         },
 
@@ -1842,6 +2332,32 @@
             const myArtists = ArtistManager.getSortedList();
             const presetArtists = PRESET_ARTISTS;
             const settings = StorageManager.getSettings();
+            const query = SearchManager.currentQuery;
+
+            // 搜索模式
+            if (query.trim()) {
+                const allArtists = [...presetArtists.map((a) => ({ ...a, isPreset: true })), ...myArtists.map((a) => ({ ...a, isPreset: false }))];
+                const results = SearchManager.searchArtists(query, allArtists);
+
+                if (!results || results.length === 0) {
+                    container.innerHTML = `
+                        <div class="coomer-no-results">
+                            <div class="coomer-no-results-icon">🔍</div>
+                            <div>未找到匹配的艺术家</div>
+                            <div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">尝试其他关键词</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const grid = document.createElement('div');
+                grid.className = 'coomer-grid';
+                results.forEach((artist) => {
+                    grid.appendChild(this.createArtistCard(artist, artist.isPreset));
+                });
+                container.appendChild(grid);
+                return;
+            }
 
             // 如果都没有内容，显示空状态
             if (myArtists.length === 0 && presetArtists.length === 0) {
@@ -2017,7 +2533,24 @@
         },
 
         renderPostsTab(container) {
-            const posts = PostManager.getSortedList(); // 使用排序后的列表
+            let posts = PostManager.getSortedList(); // 使用排序后的列表
+            const query = SearchManager.currentQuery;
+
+            // 搜索模式
+            if (query.trim()) {
+                const results = SearchManager.searchPosts(query, posts);
+                if (!results || results.length === 0) {
+                    container.innerHTML = `
+                        <div class="coomer-no-results">
+                            <div class="coomer-no-results-icon">🔍</div>
+                            <div>未找到匹配的作品</div>
+                            <div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">尝试其他关键词</div>
+                        </div>
+                    `;
+                    return;
+                }
+                posts = results;
+            }
 
             if (posts.length === 0) {
                 container.innerHTML = `
@@ -2282,27 +2815,45 @@
                 controlBar: {
                     children: [
                         'playToggle',
-                        'skipBackward', // 后退 15s
-                        'skipForward', // 快进 15s
-                        'volumePanel',
+                        'skipBackward', // 后退 10s
+                        'skipForward', // 快进 10s
                         'currentTimeDisplay',
                         'timeDivider',
                         'durationDisplay',
                         'progressControl',
                         'playbackRateMenuButton',
+                        'volumePanel',
                         'pictureInPictureToggle',
                         'fullscreenToggle',
                     ],
                     skipButtons: {
-                        forward: 15,
-                        backward: 15,
+                        forward: 10, // Video.js 8.x 只支持 5/10/30 秒
+                        backward: 10,
                     },
                 },
             });
 
-            // 自动聚焦以便键盘控制
+            // 自动聚焦以便键盘控制 + 自动全屏
             player.ready(() => {
                 player.focus();
+
+                // 自动全屏（设置开启时）
+                const settings = StorageManager.getSettings();
+                if (settings.autoFullscreen) {
+                    player.one('play', () => {
+                        setTimeout(() => {
+                            if (!document.fullscreenElement && !player.paused()) {
+                                // 对播放器容器请求全屏，保留 Video.js 控件
+                                const playerEl = player.el();
+                                if (playerEl.requestFullscreen) {
+                                    playerEl.requestFullscreen().catch(() => {});
+                                } else if (playerEl.webkitRequestFullscreen) {
+                                    playerEl.webkitRequestFullscreen();
+                                }
+                            }
+                        }, 300);
+                    });
+                }
             });
 
             const closePlayer = () => {
@@ -2451,10 +3002,14 @@
     }
 
     function initUI() {
+        // 注入样式
+        VideoPlayerEnhancer.injectStyles();
+
         // 等待页面完全渲染（SPA 需要延迟）
         setTimeout(() => {
             UIPanel.init();
             AutoFullscreen.init();
+            VideoPlayerEnhancer.init();
 
             // 监听 SPA URL 变化
             if (window.onurlchange === null) {
