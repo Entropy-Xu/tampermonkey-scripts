@@ -14,7 +14,9 @@
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @grant        GM_notification
+// @grant        GM_xmlhttpRequest
 // @grant        window.focus
+// @connect      v0.app
 // @run-at       document-idle
 // @supportURL   https://github.com/urzeye/tampermonkey-scripts/issues
 // @homepageURL  https://github.com/urzeye/tampermonkey-scripts
@@ -69,6 +71,7 @@
         renameInterval: 3, // 检测频率(秒)
         showStatus: true, // 显示生成状态图标 (⏳/✅)
         showNotification: false, // 发送桌面通知
+        notificationSound: false, // 通知声音（默认关闭）
         autoFocus: false, // 生成完成后自动将窗口置顶
         privacyMode: false, // 隐私模式
         privacyTitle: 'Google', // 隐私模式下的伪装标题
@@ -240,6 +243,8 @@
             showStatusDesc: '在标签页标题中显示生成状态图标（⏳/✅）',
             showNotificationLabel: '发送桌面通知',
             showNotificationDesc: '生成完成时发送系统通知',
+            notificationSoundLabel: '通知声音',
+            notificationSoundDesc: '生成完成时播放提示音',
             autoFocusLabel: '自动窗口置顶',
             autoFocusDesc: '生成完成时自动将窗口带回前台',
             privacyModeLabel: '隐私模式',
@@ -483,6 +488,8 @@
             showStatusDesc: '在標籤頁標題中顯示生成狀態圖示（⏳/✅）',
             showNotificationLabel: '傳送桌面通知',
             showNotificationDesc: '生成完成時傳送系统通知',
+            notificationSoundLabel: '通知聲音',
+            notificationSoundDesc: '生成完成時播放提示音',
             autoFocusLabel: '自動視窗置頂',
             autoFocusDesc: '生成完成時自動將視窗帶回前台',
             privacyModeLabel: '隱私模式',
@@ -725,6 +732,8 @@
             showStatusDesc: 'Display generation status icon in tab title (⏳/✅)',
             showNotificationLabel: 'Desktop Notification',
             showNotificationDesc: 'Send system notification when generation completes',
+            notificationSoundLabel: 'Notification Sound',
+            notificationSoundDesc: 'Play a sound when generation completes',
             autoFocusLabel: 'Auto Focus Window',
             autoFocusDesc: 'Bring window to front when generation completes',
             privacyModeLabel: 'Privacy Mode',
@@ -2660,12 +2669,71 @@
                     title: this.t('notificationTitle').replace('{site}', this.adapter.getName()),
                     text: this.lastSessionName || this.t('notificationBody'),
                     timeout: 5000,
+                    highlight: true,
+                    silent: true, // 禁用系统通知声音，由"通知声音"开关单独控制
                     onclick: () => window.focus(),
                 });
             }
 
+            // 播放通知声音（独立于桌面通知，即时生效无需刷新）
+            if (tabSettings.notificationSound) {
+                this._playNotificationSound();
+            }
+
             if (tabSettings.autoFocus) {
                 window.focus();
+            }
+        }
+
+        /**
+         * 播放通知声音
+         * 使用 GM_xmlhttpRequest 绕过 CSP 限制
+         */
+        _playNotificationSound() {
+            const SOUND_URL = 'https://v0.app/chat-static/assets/sfx/streaming-complete-v2.mp3';
+
+            // 如果已有缓存的 Blob URL，直接播放
+            if (this._notificationAudioBlobUrl) {
+                this._playAudioFromUrl(this._notificationAudioBlobUrl);
+                return;
+            }
+
+            // 首次：使用 GM_xmlhttpRequest 下载音频绕过 CSP
+            if (typeof GM_xmlhttpRequest !== 'undefined') {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: SOUND_URL,
+                    responseType: 'blob',
+                    onload: (response) => {
+                        if (response.status === 200 && response.response) {
+                            // 创建 Blob URL 并缓存
+                            this._notificationAudioBlobUrl = URL.createObjectURL(response.response);
+                            this._playAudioFromUrl(this._notificationAudioBlobUrl);
+                        }
+                    },
+                    onerror: () => {
+                        // 下载失败，静默处理
+                    },
+                });
+            }
+        }
+
+        /**
+         * 从 URL 播放音频
+         */
+        _playAudioFromUrl(url) {
+            try {
+                if (!this._notificationAudio) {
+                    this._notificationAudio = new Audio();
+                    this._notificationAudio.volume = 0.5;
+                }
+                this._notificationAudio.src = url;
+                this._notificationAudio.currentTime = 0;
+                this._notificationAudio.play().catch(() => {
+                    // 忽略播放失败
+                });
+            } catch (e) {
+                // 忽略错误
             }
         }
 
@@ -10778,6 +10846,27 @@
                 notificationItem.appendChild(notificationInfo);
                 notificationItem.appendChild(notificationToggle);
                 tabSettingsContainer.appendChild(notificationItem);
+
+                // 6.6.1 通知声音 (notificationSound)
+                const soundItem = createElement('div', { className: 'setting-item' });
+                const soundInfo = createElement('div', { className: 'setting-item-info' });
+                soundInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('notificationSoundLabel')));
+                soundInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('notificationSoundDesc')));
+
+                const soundToggle = createElement('div', {
+                    className: 'setting-toggle' + (this.settings.tabSettings?.notificationSound ? ' active' : ''),
+                    id: 'toggle-notification-sound',
+                });
+                soundToggle.addEventListener('click', () => {
+                    this.settings.tabSettings.notificationSound = !this.settings.tabSettings.notificationSound;
+                    soundToggle.classList.toggle('active', this.settings.tabSettings.notificationSound);
+                    this.saveSettings();
+                    showToast(this.settings.tabSettings.notificationSound ? this.t('settingOn') : this.t('settingOff'));
+                });
+
+                soundItem.appendChild(soundInfo);
+                soundItem.appendChild(soundToggle);
+                tabSettingsContainer.appendChild(soundItem);
             }
 
             // 6.7 自动窗口置顶 (autoFocus)
