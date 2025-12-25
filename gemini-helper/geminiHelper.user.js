@@ -365,6 +365,8 @@
             conversationsSettingsTitle: '会话设置',
             conversationsSyncUnpinLabel: '同步时更新取消置顶',
             conversationsSyncUnpinDesc: '同步时，将云端未置顶的会话在本地也取消置顶',
+            folderRainbowLabel: '文件夹彩虹色',
+            folderRainbowDesc: '为每个文件夹分配不同的背景颜色，关闭后使用统一纯色',
             conversationsSyncDeleteLabel: '删除时同步删除云端',
             conversationsSyncDeleteDesc: '删除本地会话记录时，同时从 {site} 云端删除',
             conversationsSyncRenameLabel: '重命名时同步云端',
@@ -612,6 +614,8 @@
             conversationsSettingsTitle: '會話設置',
             conversationsSyncUnpinLabel: '同步時更新取消置頂',
             conversationsSyncUnpinDesc: '同步時，將雲端未置頂的會話在本地也取消置頂',
+            folderRainbowLabel: '資料夾彩虹色',
+            folderRainbowDesc: '為每個資料夾分配不同的背景顏色，關閉後使用統一純色',
             conversationsSyncDeleteLabel: '刪除時同步刪除雲端',
             conversationsSyncDeleteDesc: '刪除本地會話記錄時，同時從 {site} 雲端刪除',
             conversationsSyncRenameLabel: '重命名時同步雲端',
@@ -858,6 +862,8 @@
             conversationsSettingsTitle: 'Conversation Settings',
             conversationsSyncUnpinLabel: 'Sync unpin on sync',
             conversationsSyncUnpinDesc: 'Update local pin status when conversation is unpinned in cloud',
+            folderRainbowLabel: 'Folder Rainbow Colors',
+            folderRainbowDesc: 'Assign different background colors to folders, disable for uniform color',
             conversationsSyncDeleteLabel: 'Sync delete to cloud',
             conversationsSyncDeleteDesc: 'When deleting local record, also delete from {site} cloud',
             conversationsSyncRenameLabel: 'Sync rename to cloud',
@@ -5225,7 +5231,9 @@
          */
         createFolderItem(folder, index) {
             // 使用 CSS 变量以支持暗色模式
-            const bgVar = folder.isDefault ? 'var(--gh-folder-bg-default)' : `var(--gh-folder-bg-${index % 8})`;
+            // 彩虹色开关：默认开启，关闭后使用统一纯色 (--gh-bg)
+            const useRainbow = this.settings.conversations?.folderRainbow !== false;
+            const bgVar = folder.isDefault ? 'var(--gh-folder-bg-default)' : useRainbow ? `var(--gh-folder-bg-${index % 8})` : 'var(--gh-bg)';
 
             const item = createElement('div', {
                 className: 'conversations-folder-item' + (folder.isDefault ? ' default' : ''),
@@ -10360,6 +10368,33 @@
             syncUnpinItem.appendChild(syncUnpinInfo);
             syncUnpinItem.appendChild(syncUnpinToggle);
             convSettingsContainer.appendChild(syncUnpinItem);
+
+            // 文件夹彩虹色开关
+            const folderRainbowItem = createElement('div', { className: 'setting-item' });
+            const folderRainbowInfo = createElement('div', { className: 'setting-item-info' });
+            folderRainbowInfo.appendChild(createElement('div', { className: 'setting-item-label' }, this.t('folderRainbowLabel')));
+            folderRainbowInfo.appendChild(createElement('div', { className: 'setting-item-desc' }, this.t('folderRainbowDesc')));
+
+            const folderRainbowToggle = createElement('div', {
+                className: 'setting-toggle' + (this.settings.conversations?.folderRainbow !== false ? ' active' : ''),
+                id: 'toggle-folder-rainbow',
+            });
+            folderRainbowToggle.addEventListener('click', () => {
+                if (!this.settings.conversations) this.settings.conversations = {};
+                this.settings.conversations.folderRainbow = !this.settings.conversations.folderRainbow;
+                // 处理 undefined -> false 的情况（默认是 true）
+                if (this.settings.conversations.folderRainbow === undefined) {
+                    this.settings.conversations.folderRainbow = false;
+                }
+                folderRainbowToggle.classList.toggle('active', this.settings.conversations.folderRainbow !== false);
+                this.saveSettings();
+                // 刷新会话 UI
+                if (this.conversationManager) this.conversationManager.createUI();
+                showToast(this.settings.conversations.folderRainbow !== false ? this.t('settingOn') : this.t('settingOff'));
+            });
+            folderRainbowItem.appendChild(folderRainbowInfo);
+            folderRainbowItem.appendChild(folderRainbowToggle);
+            convSettingsContainer.appendChild(folderRainbowItem);
 
             const convSettingsSection = this.createCollapsibleSection(this.t('conversationsSettingsTitle'), convSettingsContainer, { defaultExpanded: false });
 
