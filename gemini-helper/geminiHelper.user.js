@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.10.1
+// @version      1.10.2
 // @description  Gemini 助手：支持会话管理（分类/搜索/标签）、对话大纲、提示词管理、模型锁定、面板状态控制、主题一键切换、标签页增强、Markdown 加粗修复、阅读历史恢复、双向锚点、自动加宽页面、中文输入修复、智能暗色模式适配，适配 Gemini 标准版/企业版
 // @description:en Gemini Helper: Supports conversation management (folders/search/tags), outline navigation, prompt management, model locking, Markdown bold fix, tab enhancements (status display/privacy mode/completion notification), reading history, bidirectional anchor, auto page width, Chinese input fix, smart dark mode, adaptation for Gemini/Gemini Enterprise
 // @author       urzeye
@@ -358,6 +358,11 @@
             confirm: '确定',
             conversationsSyncEmpty: '未找到会话',
             conversationsSyncNoChange: '无新会话',
+            conversationsLocate: '定位当前对话',
+            conversationsLocateSuccess: '已定位到当前对话',
+            conversationsLocateNotFound: '当前对话未收录，正在同步...',
+            conversationsLocateNewChat: '当前是新对话，尚未保存',
+            conversationsLocateSyncFailed: '同步后仍未找到该对话',
             justNow: '刚刚',
             minutesAgo: '分钟前',
             hoursAgo: '小时前',
@@ -613,6 +618,11 @@
             confirm: '確定',
             conversationsSyncEmpty: '未找到會話',
             conversationsSyncNoChange: '無新會話',
+            conversationsLocate: '定位當前對話',
+            conversationsLocateSuccess: '已定位到當前對話',
+            conversationsLocateNotFound: '當前對話未收錄，正在同步...',
+            conversationsLocateNewChat: '當前是新對話，尚未保存',
+            conversationsLocateSyncFailed: '同步後仍未找到該對話',
             justNow: '剛剛',
             minutesAgo: '分鐘前',
             hoursAgo: '小時前',
@@ -867,6 +877,11 @@
             confirm: 'Confirm',
             conversationsSyncEmpty: 'No conversations found',
             conversationsSyncNoChange: 'No new conversations',
+            conversationsLocate: 'Locate current chat',
+            conversationsLocateSuccess: 'Located current conversation',
+            conversationsLocateNotFound: 'Chat not indexed, syncing...',
+            conversationsLocateNewChat: 'This is a new chat, not saved yet',
+            conversationsLocateSyncFailed: 'Chat still not found after sync',
             justNow: 'Just now',
             minutesAgo: 'm ago',
             hoursAgo: 'h ago',
@@ -5022,8 +5037,22 @@
                 'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z';
             const HOURGLASS_PATH = 'M6 2v6h.01L6 8.01 10 12l-4 4 .01.01H6V22h12v-5.99h-.01L18 16l-4-4 4-3.99-.01-.01H18V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5l-4-4V4h8v3.5l-4 4z';
             const CHECK_BOX_PATH = 'M19 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.11 0 2-.9 2-2V5c0-1.1-.89-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z';
+            const LOCATE_PATH =
+                'M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z';
+            const ADD_FOLDER_PATH = 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z';
 
-            // 2. 同步按钮 (紧跟下拉框)
+            // 2. 定位当前对话按钮
+            const locateBtn = createElement('button', {
+                className: 'conversations-toolbar-btn locate',
+                id: 'conversations-locate-btn',
+                title: this.t('conversationsLocate'),
+                style: 'display: flex; align-items: center; justify-content: center;',
+            });
+            locateBtn.appendChild(createSVG(LOCATE_PATH));
+            locateBtn.addEventListener('click', () => this.locateCurrentConversation());
+            toolbar.appendChild(locateBtn);
+
+            // 3. 同步按钮
             const syncBtn = createElement('button', {
                 className: 'conversations-toolbar-btn sync',
                 id: 'conversations-sync-btn',
@@ -5045,17 +5074,17 @@
             });
             toolbar.appendChild(syncBtn);
 
-            // 3. 新建文件夹按钮 (右侧，仅图标)
+            // 4. 新建文件夹按钮
             const addFolderBtn = createElement('button', {
                 className: 'conversations-toolbar-btn add-folder',
                 title: this.t('conversationsAddFolder') || 'New Folder',
                 style: 'display: flex; align-items: center; justify-content: center;',
             });
-            addFolderBtn.appendChild(createSVG('M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z'));
+            addFolderBtn.appendChild(createSVG(ADD_FOLDER_PATH));
             addFolderBtn.addEventListener('click', () => this.showCreateFolderDialog());
             toolbar.appendChild(addFolderBtn);
 
-            // 4. 批量模式按钮
+            // 5. 批量模式按钮
             const batchModeBtn = createElement('button', {
                 className: 'conversations-toolbar-btn batch-mode' + (this.batchMode ? ' active' : ''),
                 title: this.t('conversationsBatchMode') || '批量操作',
@@ -6010,6 +6039,135 @@
                 batchInfo.textContent = (this.t('batchSelected') || '已选 {n} 个').replace('{n}', count);
             } else {
                 batchBar.style.display = 'none';
+            }
+        }
+
+        /**
+         * 定位当前对话
+         * 从 URL 获取 sessionId，在会话列表中找到对应项并高亮
+         */
+        async locateCurrentConversation() {
+            // 1. 获取当前会话 ID
+            const sessionId = this.siteAdapter.getSessionId();
+            if (!sessionId || sessionId === 'default' || sessionId === 'app') {
+                showToast(this.t('conversationsLocateNewChat'));
+                return;
+            }
+
+            // 2. 获取当前 CID（仅 Business）
+            const currentCid = this.siteAdapter.getCurrentCid?.() || null;
+
+            // 3. 在数据中查找
+            let conv = this.data.conversations[sessionId];
+
+            // 4. 如果没找到，尝试自动同步
+            if (!conv) {
+                showToast(this.t('conversationsLocateNotFound'));
+
+                // 获取定位按钮并显示 loading 状态
+                const locateBtn = this.container.querySelector('#conversations-locate-btn');
+                const LOCATE_PATH =
+                    'M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z';
+                const HOURGLASS_PATH = 'M6 2v6h.01L6 8.01 10 12l-4 4 .01.01H6V22h12v-5.99h-.01L18 16l-4-4 4-3.99-.01-.01H18V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5l-4-4V4h8v3.5l-4 4z';
+
+                if (locateBtn) {
+                    locateBtn.disabled = true;
+                    clearElement(locateBtn);
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('viewBox', '0 0 24 24');
+                    svg.setAttribute('fill', 'currentColor');
+                    svg.setAttribute('width', '18');
+                    svg.setAttribute('height', '18');
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    path.setAttribute('d', HOURGLASS_PATH);
+                    svg.appendChild(path);
+                    locateBtn.appendChild(svg);
+                }
+
+                // 执行同步
+                const folderSelect = this.container.querySelector('#conversations-folder-select');
+                const targetFolderId = folderSelect?.value || 'inbox';
+                await this.siteAdapter.loadAllConversations();
+                this.syncConversations(targetFolderId, true, false); // silent sync
+
+                // 恢复按钮状态
+                if (locateBtn) {
+                    locateBtn.disabled = false;
+                    clearElement(locateBtn);
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('viewBox', '0 0 24 24');
+                    svg.setAttribute('fill', 'currentColor');
+                    svg.setAttribute('width', '18');
+                    svg.setAttribute('height', '18');
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    path.setAttribute('d', LOCATE_PATH);
+                    svg.appendChild(path);
+                    locateBtn.appendChild(svg);
+                }
+
+                // 再次查找
+                conv = this.data.conversations[sessionId];
+                if (!conv) {
+                    showToast(this.t('conversationsLocateSyncFailed'));
+                    return;
+                }
+            }
+
+            // 5. 检查 CID 是否匹配（Business 多团队场景）
+            // 注意：如果会话没有 cid（旧数据），或者当前不在团队模式，则跳过检查
+            if (currentCid && conv.cid && conv.cid !== currentCid) {
+                showToast(this.t('conversationsLocateWrongTeam') || '该对话属于其他团队');
+                return;
+            }
+
+            // 6. 展开对应文件夹（仅在需要时重建 UI，避免抖动）
+            const targetFolderId = conv.folderId || 'inbox';
+            const needsExpand = this.expandedFolderId !== targetFolderId;
+
+            if (needsExpand) {
+                this.expandedFolderId = targetFolderId;
+                this.createUI();
+            }
+
+            // 7. 延迟执行滚动和高亮（等待 DOM 渲染完成）
+            const doHighlight = () => {
+                const item = this.container.querySelector(`.conversations-item[data-id="${sessionId}"]`);
+                if (item) {
+                    // 1. 找到会话所在的内层滚动容器 (.conversations-list)
+                    const conversationsList = item.closest('.conversations-list');
+                    if (conversationsList) {
+                        // 滚动内层容器使会话项居中
+                        const itemRect = item.getBoundingClientRect();
+                        const listRect = conversationsList.getBoundingClientRect();
+                        const scrollOffset = itemRect.top - listRect.top - listRect.height / 2 + itemRect.height / 2;
+                        conversationsList.scrollBy({ top: scrollOffset, behavior: 'smooth' });
+                    }
+
+                    // 2. 同时确保外层文件夹列表也滚动到正确位置
+                    const folderList = this.container.querySelector('.conversations-folder-list');
+                    const folderItem = item.closest('.conversations-folder-item');
+                    if (folderList && folderItem) {
+                        const folderRect = folderItem.getBoundingClientRect();
+                        const outerRect = folderList.getBoundingClientRect();
+                        // 如果文件夹不在可视区域内，滚动到可见位置
+                        if (folderRect.top < outerRect.top || folderRect.bottom > outerRect.bottom) {
+                            const scrollOffset = folderRect.top - outerRect.top - 20; // 顶部留20px边距
+                            folderList.scrollBy({ top: scrollOffset, behavior: 'smooth' });
+                        }
+                    }
+
+                    // 高亮效果
+                    item.classList.add('locate-highlight');
+                    setTimeout(() => item.classList.remove('locate-highlight'), 2000);
+                    showToast(this.t('conversationsLocateSuccess'));
+                }
+            };
+
+            // 如果重建了 UI，等待下一帧；否则直接执行
+            if (needsExpand) {
+                requestAnimationFrame(doHighlight);
+            } else {
+                doHighlight();
             }
         }
 
@@ -9296,21 +9454,22 @@
                     overflow-x: hidden; /* 隐藏横向滚动条 */
                 }
                 .conversations-toolbar {
-                    display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--gh-border, #e5e7eb); flex-shrink: 0;
+                    display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--gh-border, #e5e7eb); flex-shrink: 0;
                 }
                 .conversations-toolbar-btn {
-                    padding: 6px 12px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 8px; background: var(--gh-bg-secondary, #f9fafb);
+                    padding: 5px 8px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 6px; background: var(--gh-bg-secondary, #f9fafb);
                     font-size: 13px; color: var(--gh-text, #374151); cursor: pointer; transition: all 0.2s;
-                    display: flex; align-items: center; gap: 4px;
+                    display: flex; align-items: center; justify-content: center;
+                    min-width: 32px; height: 32px; flex-shrink: 0;
                 }
+                .conversations-toolbar-btn svg { width: 16px; height: 16px; }
                 .conversations-toolbar-btn:hover { background: var(--gh-hover, #f3f4f6); border-color: #9ca3af; }
-                .conversations-toolbar-btn.sync { padding: 6px 10px; }
                 .conversations-toolbar-btn.batch-mode.active { background: var(--gh-border-active); color: white; border-color: var(--gh-border-active); }
                 .conversations-toolbar-btn:disabled { opacity: 0.6; cursor: wait; }
                 .conversations-folder-select {
-                    padding: 6px 10px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 8px;
+                    padding: 5px 8px; border: 1px solid var(--gh-input-border, #d1d5db); border-radius: 6px;
                     background: var(--gh-bg-secondary, #f9fafb); font-size: 13px; color: var(--gh-text, #374151); cursor: pointer;
-                    flex: 1; min-width: 0; max-width: 150px;
+                    flex: 1; min-width: 80px; height: 32px;
                 }
                 .conversations-folder-select:focus { outline: none; border-color: var(--gh-border-active); }
                 .conversations-folder-list {
@@ -9595,8 +9754,10 @@
 
                 /* 会话列表样式 */
                 .conversations-list {
-                    width: 100%; /* 占满父容器宽度 */
-                    padding: 8px 12px;
+                    width: calc(100% - 8px); /* 留出边距给高亮效果 */
+                    margin-left: 4px;
+                    margin-right: 4px;
+                    padding: 8px;
                     background: var(--gh-bg-secondary);
                     border: 2px solid var(--gh-border-active);
                     border-top: none;
@@ -9605,6 +9766,7 @@
                     margin-bottom: 4px;
                     max-height: 300px;
                     overflow-y: auto;
+                    overflow-x: hidden;
                     scrollbar-width: none; /* Firefox */
                     -ms-overflow-style: none; /* IE/Edge */
                 }
@@ -9683,6 +9845,19 @@
                 .conversations-item-menu button:hover { background: var(--gh-hover, #f3f4f6); }
                 .conversations-item-menu button.danger { color: #dc2626; }
                 .conversations-item-menu button.danger:hover { background: #fef2f2; }
+
+                /* 定位高亮动画 */
+                .conversations-item.locate-highlight {
+                    background: var(--gh-outline-locate-bg) !important;
+                    border: 2px solid var(--gh-outline-locate-border) !important;
+                    border-radius: 6px;
+                    box-shadow: inset 0 0 8px var(--gh-outline-locate-shadow);
+                    animation: conversationsLocatePulse 0.6s ease-in-out 2;
+                }
+                @keyframes conversationsLocatePulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.01); }
+                }
 
                 /* 复选框样式 */
                 .conversations-folder-checkbox {
