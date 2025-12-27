@@ -9354,7 +9354,7 @@
                 .prompt-modal-btn.secondary { background: var(--gh-hover, #f3f4f6); color: #4b5563; }
                 /* 选中的提示词显示栏 */
                 .selected-prompt-bar {
-                    position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+                    position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%); /* bottom 由 JS 动态控制 */
                     background: var(--gh-header-bg);
                     color: white; padding: 8px 16px; border-radius: 20px; font-size: 13px; display: none;
                     align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(66,133,244,0.3);
@@ -12666,8 +12666,17 @@
                 selectedBar.classList.add('show');
             }
 
+            // 先插入内容
             this.insertPromptToTextarea(prompt.content);
             showToast(`${this.t('inserted')}: ${prompt.title}`);
+
+            // 多次延迟更新悬浮条位置，确保输入框高度完全更新
+            // 第一次快速响应，后续作为补偿
+            [50, 200, 400, 1200].forEach((delay) => {
+                setTimeout(() => {
+                    this.updateSelectedBarPosition();
+                }, delay);
+            });
         }
 
         insertPromptToTextarea(promptContent) {
@@ -12696,6 +12705,43 @@
             this.selectedPrompt = null;
             document.querySelector('.selected-prompt-bar')?.classList.remove('show');
             document.querySelectorAll('.prompt-item').forEach((item) => item.classList.remove('selected'));
+        }
+
+        // 动态更新悬浮条位置（基于输入框容器位置）
+        updateSelectedBarPosition() {
+            const bar = document.querySelector('.selected-prompt-bar');
+            const textarea = this.siteAdapter?.textarea;
+
+            if (!bar) return;
+
+            // 如果没有输入框引用或输入框不在 DOM 中，使用默认位置
+            if (!textarea || !textarea.isConnected) {
+                bar.style.bottom = '120px';
+                return;
+            }
+
+            // 查找输入框的容器：向上遍历找到有边框的元素（Gemini 输入框容器有圆角边框）
+            let inputContainer = textarea;
+            let parent = textarea.parentElement;
+            for (let i = 0; i < 10 && parent && parent !== document.body; i++) {
+                const style = window.getComputedStyle(parent);
+                // 查找有边框或圆角的容器
+                if (style.borderRadius && parseFloat(style.borderRadius) > 0) {
+                    inputContainer = parent;
+                    break;
+                }
+                parent = parent.parentElement;
+            }
+
+            const containerRect = inputContainer.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+
+            // 悬浮条显示在输入容器上方，保持 20px 间距
+            const desiredBottom = viewportHeight - containerRect.top + 20;
+
+            // 确保不会太靠近顶部（最小 50px 距顶），也不会太靠近底部
+            const clampedBottom = Math.max(50, Math.min(desiredBottom, viewportHeight - 50));
+            bar.style.bottom = clampedBottom + 'px';
         }
 
         showEditModal(prompt = null) {
@@ -12955,6 +13001,13 @@
 
             // 初始化 URL 监听 (处理 SPA 页面跳转)
             this.initUrlChangeObserver();
+
+            // 窗口大小变化时更新悬浮条位置
+            window.addEventListener('resize', () => {
+                if (this.selectedPrompt) {
+                    this.updateSelectedBarPosition();
+                }
+            });
         }
 
         initUrlChangeObserver() {
@@ -12971,6 +13024,11 @@
                     // 重置内存中的锚点状态
                     this.anchorScrollTop = null;
                     this.anchorManager.reset();
+
+                    // 会话切换时清除悬浮条和选中的提示词
+                    this.clearSelectedPrompt();
+                    // 同时清空输入框内容，保持状态一致
+                    this.siteAdapter.clearTextarea();
 
                     // 会话切换时立即更新标签页标题
                     if (this.tabRenameManager && this.settings.tabSettings?.autoRenameTab) {
