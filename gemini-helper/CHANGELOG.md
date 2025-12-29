@@ -11,6 +11,14 @@
     2. 检查 `document.activeElement` 确保 `focus()` 成功
   - 涵盖 `GeminiAdapter` 和 `GeminiBusinessAdapter` 的所有相关方法
 
+- **修复跨元素 Markdown 加粗渲染问题**：修复当 `**` 标记分散在不同 DOM 节点时无法正确渲染的问题。
+  - **问题场景**：`**<span>text</span>**` 或更复杂的 `**text<b><span>...</span></b>text**` 结构
+  - **修复方案**：重构 `MarkdownFixer.fixCrossElementBold()` 方法
+    - 使用 `collectBoldMarkers()` 扫描段落中所有 `**` 的位置（支持任意偏移量）
+    - 按顺序配对标记，检查中间是否仅有内联元素
+    - 使用 Range API 分割文本节点并包裹为 `<strong>`
+    - 自动展开被包裹内容中的嵌套 `<b>` 标签
+
 ---
 
 ## 版本 1.11.2 (2025-12-29)
