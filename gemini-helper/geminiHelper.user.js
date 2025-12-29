@@ -20,6 +20,7 @@
 // @connect      v0.app
 // @connect      googleusercontent.com
 // @run-at       document-idle
+// @noframes
 // @supportURL   https://github.com/urzeye/tampermonkey-scripts/issues
 // @homepageURL  https://github.com/urzeye/tampermonkey-scripts
 // @require      https://update.greasyfork.org/scripts/559089/1714656/background-keep-alive.js
@@ -31,6 +32,11 @@
 
 (function () {
     'use strict';
+
+    // 防止在 iframe 中执行（图文并茂模式等场景）
+    if (window.top !== window.self) {
+        return;
+    }
 
     // 防止重复初始化
     if (window.geminiHelperInitialized) {
