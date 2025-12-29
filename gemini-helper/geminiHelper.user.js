@@ -1455,7 +1455,7 @@
                 return this._cachedFlutterScrollContainer;
             }
 
-            // 尝试在 iframe 中查找（Gemini 动态视图/图文交汇模式）
+            // 尝试在 iframe 中查找（Gemini 图文并茂模式）
             // iframe 有 allow-same-origin，可以跨域访问其内部 DOM
             const iframes = document.querySelectorAll('iframe[sandbox*="allow-same-origin"]');
             for (const iframe of iframes) {
@@ -14491,11 +14491,11 @@
                 return;
             }
 
-            // 检测是否在 Flutter 动态视图模式
+            // 检测是否在 Flutter 图文并茂模式
             const isFlutterView = container.tagName?.toLowerCase().startsWith('flt-');
 
             if (isFlutterView) {
-                // Flutter 动态视图：使用循环滚动确保真正到达顶部
+                // Flutter 图文并茂：使用循环滚动确保真正到达顶部
                 // transform: scale() 会导致 scrollTop 设置不准确
                 const scrollStep = () => {
                     const before = container.scrollTop;
@@ -14522,12 +14522,12 @@
             const container = this.scrollManager.container;
             if (!container) return;
 
-            // 检测是否在 Flutter 动态视图模式（有 transform: scale 缩放）
+            // 检测是否在 Flutter 图文并茂模式（有 transform: scale 缩放）
             // 在这种模式下，scrollHeight 报告的值可能不准确
             const isFlutterView = container.tagName?.toLowerCase().startsWith('flt-');
 
             if (isFlutterView) {
-                // Flutter 动态视图：使用循环滚动确保真正触底
+                // Flutter 图文并茂：使用循环滚动确保真正触底
                 // transform: scale() 会导致 scrollHeight 与实际滚动距离不匹配
                 const scrollStep = () => {
                     const before = container.scrollTop;
@@ -14620,11 +14620,11 @@
                 const container = this.scrollManager.container;
                 const targetTop = this.savedAnchorTop;
 
-                // 检测是否在 Flutter 动态视图模式
+                // 检测是否在 Flutter 图文并茂模式
                 const isFlutterView = container?.tagName?.toLowerCase().startsWith('flt-');
 
                 if (isFlutterView && container) {
-                    // Flutter 动态视图：直接设置 scrollTop
+                    // Flutter 图文并茂：直接设置 scrollTop
                     // 由于锚点保存和恢复使用的是相同的坐标系，直接设置即可
                     container.scrollTop = targetTop;
                 } else {
