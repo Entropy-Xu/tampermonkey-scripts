@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
 // @namespace    http://tampermonkey.net/
-// @version      1.11.2
+// @version      1.11.3
 // @description  Gemini 助手：会话管理与导出、对话大纲、提示词管理、标签页增强（状态/隐私模式/通知）、阅读历史记录与恢复、双向/手动锚点、图片水印移除、加粗修复、公式/表格复制、模型锁定、页面美化、主题切换、智能暗色模式（适配 Gemini 标准版/企业版）
 // @description:en Gemini Helper: Conversation management & export, outline navigation, prompt management, tab enhancements (status/privacy/notification), reading history & restore, bidirectional/manual anchor, image watermark removal, bold fix, formula/table copy, model lock, page beautification, theme toggle, smart dark mode (Gemini/Gemini Enterprise)
 // @author       urzeye
@@ -2029,7 +2029,19 @@
             const editor = this.textarea;
             if (!editor) return false;
 
+            // 验证元素仍在 DOM 中
+            if (!editor.isConnected) {
+                this.textarea = null;
+                return false;
+            }
+
             editor.focus();
+            // 验证 focus 是否成功（防止在 textarea 失效时 selectAll 选中整个文档）
+            if (document.activeElement !== editor && !editor.contains(document.activeElement)) {
+                console.warn('[GeminiHelper] insertPrompt: focus failed, skipping execCommand');
+                return false;
+            }
+
             try {
                 // 先全选
                 document.execCommand('selectAll', false, null);
@@ -2048,11 +2060,23 @@
         }
 
         clearTextarea() {
-            if (this.textarea) {
-                this.textarea.focus();
-                document.execCommand('selectAll', false, null);
-                document.execCommand('delete', false, null);
+            if (!this.textarea) return;
+
+            // 验证元素仍在 DOM 中
+            if (!this.textarea.isConnected) {
+                this.textarea = null;
+                return;
             }
+
+            this.textarea.focus();
+            // 验证 focus 是否成功（防止在 textarea 失效时 selectAll 选中整个文档）
+            if (document.activeElement !== this.textarea && !this.textarea.contains(document.activeElement)) {
+                console.warn('[GeminiHelper] clearTextarea: focus failed, skipping execCommand');
+                return;
+            }
+
+            document.execCommand('selectAll', false, null);
+            document.execCommand('delete', false, null);
         }
 
         getResponseContainerSelector() {
@@ -2606,21 +2630,39 @@
         }
 
         clearTextarea() {
-            if (this.textarea) {
-                this.textarea.focus();
-                document.execCommand('selectAll', false, null);
-                // 插入零宽空格替换旧内容（修复中文输入首字母问题）
-                document.execCommand('insertText', false, '\u200B');
+            if (!this.textarea) return;
+
+            // 验证元素仍在 DOM 中
+            if (!this.textarea.isConnected) {
+                this.textarea = null;
+                return;
             }
+
+            this.textarea.focus();
+            // Shadow DOM 场景：不做严格的焦点检查，只检查元素是否仍在 DOM 中
+            // isConnected 已经检查过，直接执行
+
+            document.execCommand('selectAll', false, null);
+            // 插入零宽空格替换旧内容（修复中文输入首字母问题）
+            document.execCommand('insertText', false, '\u200B');
         }
 
         // 普通清空（不插入零宽字符）
         clearTextareaNormal() {
-            if (this.textarea) {
-                this.textarea.focus();
-                document.execCommand('selectAll', false, null);
-                document.execCommand('delete', false, null);
+            if (!this.textarea) return;
+
+            // 验证元素仍在 DOM 中
+            if (!this.textarea.isConnected) {
+                this.textarea = null;
+                return;
             }
+
+            this.textarea.focus();
+            // Shadow DOM 场景：不做严格的焦点检查，只检查元素是否仍在 DOM 中
+            // isConnected 已经检查过，直接执行
+
+            document.execCommand('selectAll', false, null);
+            document.execCommand('delete', false, null);
         }
 
         afterPropertiesSet(options = {}) {
@@ -15371,8 +15413,6 @@
 
                     // 会话切换时清除悬浮条和选中的提示词
                     this.clearSelectedPrompt();
-                    // 同时清空输入框内容，保持状态一致
-                    this.siteAdapter.clearTextarea();
 
                     // 会话切换时立即更新标签页标题
                     if (this.tabRenameManager && this.settings.tabSettings?.autoRenameTab) {
@@ -15389,10 +15429,10 @@
                     // 给予页面渲染一点时间后尝试恢复
                     setTimeout(() => {
                         this.restoreReadingProgress();
-                        // 针对 Gemini Business：切换会话后修复中文输入
-                        if (this.siteAdapter instanceof GeminiBusinessAdapter && this.settings.clearTextareaOnSend) {
-                            // 切换会话后 textarea 引用可能失效，需要重新查找
-                            this.siteAdapter.findTextarea();
+                        // 切换会话后 textarea 引用可能失效，需要重新查找
+                        this.siteAdapter.findTextarea();
+                        // 仅在成功找到输入框时才清空，避免全选问题
+                        if (this.siteAdapter.textarea) {
                             this.siteAdapter.clearTextarea();
                         }
                     }, 1500);

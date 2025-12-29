@@ -1,5 +1,18 @@
 # Changelog
 
+## 版本 1.11.3 (2025-12-29)
+
+### 🐛 Bug 修复
+
+- **修复会话切换时页面文字全选问题**：在 Flutter 模式（图文并茂/Deep Research/动态视图）下切换会话时，不再出现全选整个页面文字的异常。
+  - **根因分析**：`clearTextarea()` 方法在调用 `document.execCommand('selectAll')` 前未验证 `focus()` 是否成功。当输入框元素失效时（如 Flutter 模式下 DOM 重建），`focus()` 静默失败，但 `selectAll` 仍会执行，导致选中整个文档而非输入框内容。
+  - **修复方案**：在 `insertPrompt()` 和 `clearTextarea()` 方法中添加双重验证：
+    1. 检查 `textarea.isConnected` 确保元素仍在 DOM 中
+    2. 检查 `document.activeElement` 确保 `focus()` 成功
+  - 涵盖 `GeminiAdapter` 和 `GeminiBusinessAdapter` 的所有相关方法
+
+---
+
 ## 版本 1.11.2 (2025-12-29)
 
 ### ✨ 新功能

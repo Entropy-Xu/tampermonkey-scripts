@@ -775,6 +775,95 @@ backToManualAnchor() {
 
 ---
 
+## 8. Flutter 模式切换会话时页面全选
+
+**日期**: 2025-12-29
+
+### 症状
+
+- 在 Gemini 普通版点击「图文并茂」「Deep Research」「动态视图」按钮后
+- 在侧边栏点击其他会话时，整个页面的文字被全选（蓝色高亮）
+- 问题非必现，但禁用脚本后不再出现
+
+### 背景
+
+这些模式使用 Flutter 渲染，内容在 iframe 中通过 `<flt-semantics>` 元素呈现。脚本的 `getScrollContainer()` 方法会缓存 iframe 内的 Flutter 容器。
+
+关键代码路径：
+
+1. 用户点击侧边栏切换会话 → URL 变化
+2. `checkUrl()` 被触发
+3. `checkUrl()` 调用 `this.siteAdapter.clearTextarea()`
+4. `clearTextarea()` 执行 `textarea.focus()` + `document.execCommand('selectAll')`
+
+### 根因
+
+**`document.execCommand('selectAll')` 在 `focus()` 失败时会选中整个文档。**
+
+```javascript
+clearTextarea() {
+    if (this.textarea) {
+        this.textarea.focus();              // ⚠️ 可能失败（元素已失效）
+        document.execCommand('selectAll');  // ⚠️ 仍会执行，选中整个文档！
+        document.execCommand('delete');
+    }
+}
+```
+
+问题场景：
+
+1. 用户在 Flutter 模式下，`this.textarea` 引用可能指向旧的输入框元素
+2. Flutter 模式下 DOM 结构不同，旧的 textarea 可能已被销毁或隐藏
+3. `this.textarea.focus()` 静默失败（元素不可见或已断开连接）
+4. `document.execCommand('selectAll')` 在无焦点元素时，选中的是整个文档
+
+### 修复方案
+
+在执行 `selectAll` 之前添加双重验证：
+
+```javascript
+clearTextarea() {
+    if (!this.textarea) return;
+
+    // 1. 验证元素仍在 DOM 中
+    if (!this.textarea.isConnected) {
+        this.textarea = null;
+        return;
+    }
+
+    this.textarea.focus();
+
+    // 2. 验证 focus 是否成功
+    if (document.activeElement !== this.textarea &&
+        !this.textarea.contains(document.activeElement)) {
+        console.warn('[GeminiHelper] clearTextarea: focus failed, skipping execCommand');
+        return;
+    }
+
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+}
+```
+
+同样的修复应用于：
+
+- `GeminiAdapter.insertPrompt()`
+- `GeminiAdapter.clearTextarea()`
+- `GeminiBusinessAdapter.insertPrompt()`
+- `GeminiBusinessAdapter.clearTextarea()`
+- `GeminiBusinessAdapter.clearTextareaNormal()`
+
+### 经验总结
+
+| 教训                          | 说明                                                           |
+|-------------------------------|----------------------------------------------------------------|
+| **`focus()` 可能静默失败**     | 对不可见/已销毁的元素调用 `focus()` 不会抛出异常，但不会真正获得焦点 |
+| **`execCommand` 作用于当前焦点** | `selectAll` 在无焦点元素时会作用于整个文档                        |
+| **SPA 中的引用可能过期**        | 缓存的 DOM 引用在页面切换后可能失效，需要检查 `isConnected`         |
+| **非必现问题用 console.warn**  | 添加警告日志帮助后续排查，但不打扰正常使用                          |
+
+---
+
 ## N. 问题标题
 
 **日期**: YYYY-MM-DD
