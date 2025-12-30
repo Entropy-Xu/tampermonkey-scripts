@@ -1,5 +1,7 @@
 // ==UserScript==
 // @name         gemini-helper
+// @name:zh-cn   Gemini 助手
+// @name:zh-tw   Gemini 助手
 // @name:en      Gemini Helper
 // @name:ja      Gemini ヘルパー
 // @name:ko      Gemini 도우미
@@ -8,11 +10,11 @@
 // @name:es      Gemini Helper
 // @name:pt      Gemini Helper
 // @name:ru      Gemini Помощник
-// @name:zh-CN   Gemini 助手
-// @name:zh-TW   Gemini 助手
 // @namespace    http://tampermonkey.net/
 // @version      1.11.3
 // @description  Gemini 助手：会话管理与导出、对话大纲、提示词管理、标签页增强（状态/隐私模式/通知）、阅读历史记录与恢复、双向/手动锚点、图片水印移除、加粗修复、公式/表格复制、模型锁定、页面美化、主题切换、智能暗色模式（适配 Gemini 标准版/企业版）
+// @description:zh-cn Gemini 助手：会话管理与导出、对话大纲、提示词管理、标签页增强（状态/隐私模式/通知）、阅读历史记录与恢复、双向/手动锚点、图片水印移除、加粗修复、公式/表格复制、模型锁定、页面美化、主题切换、智能暗色模式（适配 Gemini 标准版/企业版）
+// @description:zh-tw Gemini 助手：會話管理與匯出、對話大綱、提示詞管理、標籤頁增強（狀態/隱私模式/通知）、閱讀歷史記錄與恢復、雙向/手動錨點、圖片浮水印移除、粗體修復、公式/表格複製、模型鎖定、頁面美化、主題切換、智慧暗色模式（適配 Gemini 標準版/企業版）
 // @description:en Gemini Helper: Conversation management & export, outline navigation, prompt management, tab enhancements (status/privacy/notification), reading history & restore, bidirectional/manual anchor, image watermark removal, bold fix, formula/table copy, model lock, page beautification, theme toggle, smart dark mode (Gemini/Gemini Enterprise)
 // @description:ja Gemini ヘルパー：会話管理とエクスポート、アウトラインナビ、プロンプト管理、タブ拡張（ステータス/プライバシー/通知）、閲覧履歴と復元、双方向/手動アンカー、画像透かし除去、太字修正、数式/テーブルコピー、モデルロック、ページ美化、テーマ切替、スマートダークモード（Gemini/Gemini Enterprise対応）
 // @description:ko Gemini 도우미: 대화 관리 및 내보내기, 개요 탐색, 프롬프트 관리, 탭 향상(상태/개인정보/알림), 읽기 기록 및 복원, 양방향/수동 앵커, 이미지 워터마크 제거, 굵게 수정, 수식/표 복사, 모델 잠금, 페이지 미화, 테마 전환, 스마트 다크 모드(Gemini/Gemini Enterprise 지원)
